@@ -1,0 +1,16 @@
+name: gestureplay
+description: Game 2D Flutter va Flame, Python chi nhan dien ban tay.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: '>=3.11.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flame: 1.38.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

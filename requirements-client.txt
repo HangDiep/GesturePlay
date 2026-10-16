@@ -1,0 +1,2 @@
+# Tham chieu moi truong Pygame cu. Client hien tai la Flutter/Dart.
+-r requirements-lock.txt

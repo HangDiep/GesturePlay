@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+.cache/
+logs/*.csv
+models/*.part
+client/data/*.json
+client/data/*.tmp
+flutter_app/data/*.json
+flutter_app/data/*.tmp

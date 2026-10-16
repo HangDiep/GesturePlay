@@ -1,0 +1,2 @@
+# Python chi nhan dien tay; ung dung Flutter dung flutter_app/pubspec.yaml.
+-r requirements-hand-lock.txt

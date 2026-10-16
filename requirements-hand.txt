@@ -1,0 +1,5 @@
+# Dịch vụ Python chỉ nhận diện tay. Không cần Pygame.
+mediapipe==0.10.21
+opencv-contrib-python==4.11.0.86
+numpy==1.26.4
+websockets==15.0.1
