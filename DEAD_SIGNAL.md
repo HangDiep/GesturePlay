@@ -1,6 +1,6 @@
-# DEAD SIGNAL — Flutter 2D
+# DEAD SIGNAL bản bốn map tham khảo
 
-Bản chính viết bằng **Flutter/Dart**, góc nhìn 2D từ trên xuống. Người chơi điều khiển nhân vật đi lại trong một trong bốn bản đồ riêng. Python chỉ nhận diện bàn tay và truyền dữ liệu, không chạy luật game. Lệnh mặc định không còn gọi Godot.
+**Bản chính đã chuyển sang một map. Xem [SINGLE_MAP.md](SINGLE_MAP.md) để biết luật và điều khiển hiện tại.** Nội dung dưới đây mô tả bản thử bốn bản đồ còn lưu trong `lib/exploration/app.dart`, không phải giao diện mở từ lệnh mặc định.
 
 ## Chạy
 

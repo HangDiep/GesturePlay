@@ -658,7 +658,14 @@ class _ExplorationAppState extends State<ExplorationApp>
                     Positioned(
                       right: 14,
                       top: 14,
-                      child: _preview(const Size(164, 123)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _preview(const Size(164, 123)),
+                          const SizedBox(height: 6),
+                          _handGestureIndicator(m),
+                        ],
+                      ),
                     ),
                   if (compact) ...[
                     Positioned(left: 20, bottom: 14, child: _movementPad()),
@@ -849,17 +856,42 @@ class _ExplorationAppState extends State<ExplorationApp>
                   m.phase == FieldPhase.paused
                       ? 'Tạm dừng'
                       : m.phase == FieldPhase.won
-                      ? 'Đã sơ tán an toàn'
-                      : 'Nhiệm vụ thất bại',
+                      ? 'ĐÃ SƠ TÁN AN TOÀN'
+                      : 'NHIỆM VỤ THẤT BẠI',
                   style: TextStyle(
                     fontSize: compact ? 23 : 30,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: m.phase == FieldPhase.lost
+                        ? const Color(0xffff5252)
+                        : m.phase == FieldPhase.won
+                        ? const Color(0xff69f0ae)
+                        : fieldText,
                   ),
                 ),
+                if (m.phase == FieldPhase.lost && m.deathReason.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0x33ff5252),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(color: const Color(0x66ff5252)),
+                    ),
+                    child: Text(
+                      'Nguyên nhân: ${m.deathReason}',
+                      style: const TextStyle(
+                        color: Color(0xffff8a80),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Text(
                   m.finished
-                      ? '${m.world.title} • ${m.cores}/3 lõi • ${m.kills} quái\n${m.score} điểm • ${m.elapsed.floor()} giây'
+                      ? '${m.world.title} • ${m.cores}/3 lõi • ${m.kills} quái hạ gục\n${m.score} điểm • Sinh tồn ${m.elapsed.floor()} giây'
                       : handControl
                       ? hand.statusMessage
                       : 'Tiếp tục khám phá hoặc chọn bản đồ khác.',
@@ -1052,6 +1084,61 @@ class _ExplorationAppState extends State<ExplorationApp>
     ),
     child: Material(type: MaterialType.transparency, child: child),
   );
+  Widget _handGestureIndicator(ExplorationModel m) {
+    final hasHand = hand.valid && hand.ready;
+    final isFist = hand.latest?.flag('fist') ?? false;
+    final isPinch = hand.pinched;
+    final stateColor = !hasHand
+        ? const Color(0xffff5252)
+        : isFist
+        ? const Color(0xffffd700)
+        : isPinch
+        ? const Color(0xff00e5ff)
+        : const Color(0xff69f0ae);
+    final stateText = !hasHand
+        ? '⚠️ Mất tín hiệu tay'
+        : isFist
+        ? '✊ Nạp đạn'
+        : isPinch
+        ? '🤏 Ngắm & Bắn'
+        : '✋ Mở tay di chuyển';
+
+    return Container(
+      width: 164,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xdd122026),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: stateColor.withValues(alpha: .6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: stateColor,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              stateText,
+              style: TextStyle(
+                color: stateColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _badge(String label, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(

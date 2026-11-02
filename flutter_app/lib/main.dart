@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'exploration/app.dart';
+import 'survival/app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ExplorationApp());
+  runApp(const SurvivalApp());
 }

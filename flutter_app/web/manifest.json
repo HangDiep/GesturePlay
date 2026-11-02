@@ -1,12 +1,12 @@
 {
-    "name": "GesturePlay — Sky Runner",
+    "name": "GesturePlay — DEAD SIGNAL",
     "short_name": "GesturePlay",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#fafdf9",
-    "theme_color": "#139182",
-    "description": "Chơi game 2D bằng bàn tay với Flutter và Flame.",
-    "orientation": "landscape",
+    "background_color": "#0b171d",
+    "theme_color": "#0b171d",
+    "description": "Sinh tồn trong thị trấn ma mị bằng bàn tay, bàn phím hoặc cảm ứng. Flutter 2D.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

@@ -1,6 +1,8 @@
 # GesturePlay — DEAD SIGNAL Flutter 2D
 
-Ứng dụng chính dùng **Flutter/Dart**, có nhân vật đi lại trong **4 bản đồ 2D khác nhau**: rừng thông, thị trấn bỏ hoang, bến cảng và nhà máy. Python chỉ nhận diện bàn tay. Các lệnh mặc định không yêu cầu Godot.
+Ứng dụng chính dùng **Flutter/Dart**, tập trung vào **một map Thị trấn bị phong tỏa** theo `Thiet_ke_hoan_thien_GesturePlay123.docx` và yêu cầu thu gọn mới nhất. Nhân vật áo tối, khăn đỏ đi lại trên phố cổ có nhà, xe tải, đèn lồng, cây, mưa và sương. Hình nhân vật/quái là atlas PNG có hoạt ảnh. Python nhận diện bàn tay.
+
+Bộ cảnh mới dùng **góc nhìn chéo 2D**, ba mẫu nhà phố, quầy chợ, miếu và vườn cây; mặt đá nhỏ, vũng nước xanh và ánh đèn vàng. Mái/cây giảm đậm khi che người chơi. Chuột, cảm ứng và bàn tay đều đổi hướng theo camera mới. Xem [chi tiết đồ họa](docs/GRAPHICS_V2.md).
 
 ```powershell
 cd D:\GesturePlay
@@ -9,7 +11,13 @@ npm run web
 
 Mở http://127.0.0.1:8080. Dừng bản cũ bằng Ctrl+C trước khi chạy, Ctrl+F5 nếu trình duyệt còn hiển thị bản trước. Giữ terminal mở. Để chạy cửa sổ Windows, dùng `npm run windows` hoặc nhấp đúp `Chay_GesturePlay.bat`.
 
-Luật, điều khiển, nhận diện tay, bản Android và kiểm tra: **[DEAD_SIGNAL.md](DEAD_SIGNAL.md)**.
+**Luật và điều khiển bản một map: [SINGLE_MAP.md](SINGLE_MAP.md).** Sống đủ 180 giây để thắng; ba lõi tín hiệu là mục tiêu phụ. Quái và người chơi đều có thể giết nhau. Chết có hoạt ảnh, nguyên nhân và nút chơi lại map, khôi phục tài nguyên đầu lượt.
+
+Map hiện rộng **4.400 × 3.600, gấp bốn diện tích cũ**, vẫn là một thị trấn liền mạch. **G** để ẩn nấp gần vòng xanh; **M** xem toàn khu vực. Có viền đỏ/nhịp tim khi ít máu, tiếng hú khi quái tới gần, quái tìm kiếm theo dấu và tiếng động, cùng các đợt mất điện. Các khu chợ đêm, sân đền và vườn hoang đi tới được ngay trong map này.
+
+**X** chuyển ngồi/đứng, **Z** chuyển nằm/đứng; có ba nút tư thế cho cảm ứng và một hàng tư thế trong vòng kỹ năng bàn tay. Cả ba tư thế đều bắn và thay đạn được. Ngồi tận dụng vật chắn thấp, nằm bò chậm và kín hơn trong bụi; từ nằm phải đứng dậy trước khi lướt. Hình ngồi/nằm dùng atlas riêng, xem chi tiết tại [SINGLE_MAP.md](SINGLE_MAP.md).
+
+Bản thiết kế nguồn: [Thiet_ke_hoan_thien_GesturePlay123.docx](Thiet_ke_hoan_thien_GesturePlay123.docx). Bản chơi hiện tại áp dụng màn phố cùng các luật chiến đấu, chết, kỹ năng và đồ họa. Chiến dịch bốn màn và đi cảnh ngang trong tài liệu được thu gọn theo yêu cầu chỉ chơi một map.
 
 ## Chuẩn bị môi trường Windows
 
@@ -51,7 +59,9 @@ Tài khoản, database và lịch sử lượt chơi chưa triển khai theo yê
 
 ## Cấu trúc
 
-- `flutter_app/lib/exploration/`: trò chơi Flutter 2D hiện tại.
+- `flutter_app/lib/survival/`: trang chủ, giao diện, atlas, bộ vẽ và điều khiển tay cho map chính.
+- `flutter_app/assets/town/`: nền và atlas nhân vật, quái, đồ vật tạo mới bằng image_gen; giữ alpha gốc. Yêu cầu tạo hình: `docs/design_assets/town_asset_prompts.txt`.
+- `flutter_app/lib/exploration/`: luật chiến đấu và tìm đường dùng chung; các bản đồ thử trước đây không nằm trên trang chủ mới.
 - `flutter_app/lib/services/hand_bridge.dart`: kết nối tay, preview và dữ liệu hết hạn.
 - `core/`, `hand_service/server.py`: webcam, MediaPipe và cử chỉ Python.
 - [GesturePlay_Flutter_Python_Kien_truc.md](GesturePlay_Flutter_Python_Kien_truc.md): kiến trúc hiện tại.

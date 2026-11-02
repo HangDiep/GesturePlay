@@ -1,0 +1,397 @@
+Thiết kế hoàn thiện trò chơi sinh tồn GesturePlay
+DEAD SIGNAL   Phiên bản thiết kế 1.0   Ngày 02 tháng 11 năm 2026
+Định hướng sản phẩm là một chiến dịch Flutter 2D có nhân vật điều khiển được, đồ họa ma mị và hai kiểu góc nhìn. Màn đầu sinh tồn trên phố nhìn từ trên xuống; sống sót đủ thời gian sẽ chuyển sang màn rừng đi cảnh ngang. Bốn môi trường hiện có được nối thành một hành trình thay cho các bản đồ chơi rời.
+Quái vật có thể giết nhân vật người chơi. Máu về 0 làm ván thất bại, chặn chuyển màn và mở lựa chọn chơi lại màn hiện tại.
+Hình 1  Minh họa định hướng mỹ thuật được tạo mới cho tài liệu. Đây là ảnh ý tưởng, chưa phải đồ họa đã triển khai trong game.
+Tài liệu xác định luật chơi, hình ảnh, chuyển màn, cái chết, điều khiển tay và phần mã cần xây tiếp. Mục tiêu là làm ra một bản chơi xuyên suốt có thể nghiệm thu; tài liệu không thay thế việc lập trình, sản xuất sprite và thử trên thiết bị thật.
+01 Hai hình tham khảo và cách kết hợp
+Hai ảnh do người dùng cung cấp được dùng để định hướng góc nhìn và độ phong phú của bối cảnh. Phong cách cuối cùng được chuyển về cùng một thế giới ma mị, cùng nhân vật và cùng hệ thống chiến đấu.
+Hình 2  Ảnh tham khảo thứ hai của người dùng. Màn một lấy cách nhìn từ trên xuống, đường phố có nhiều vật thể và áp lực từ quái.
+Hình 3  Ảnh tham khảo thứ nhất của người dùng. Màn hai lấy bố cục đi ngang, nền nhiều lớp và địa hình có độ cao.
+Không lấy logo, chữ quảng cáo, nhân vật hoặc ảnh chụp có watermark làm tài nguyên chạy trong game. Các sprite, địa hình và âm thanh bàn giao phải có nguồn sử dụng phù hợp. Tông hoàng hôn sáng của ảnh đi cảnh được chuyển thành rừng đêm có ánh trăng và đèn dẫn đường.
+02 Chiến dịch và vòng chơi hoàn chỉnh
+Bối cảnh và vai trò người chơi
+Người chơi là một người sống sót mang thiết bị liên lạc qua khu dân cư bị phong tỏa. Tín hiệu cứu hộ dẫn họ qua thị trấn, rừng, bến cảng rồi tới nhà máy phát ra nhiễu. Câu chuyện được kể bằng thông báo vô tuyến ngắn, đồ vật và thay đổi môi trường; không cần các đoạn phim dài.
+Màn
+Môi trường
+Góc nhìn
+Thời gian
+Kết thúc màn
+1
+Thị trấn bị phong tỏa
+Từ trên xuống
+180 giây
+Còn sống khi hết giờ
+2
+Rừng vọng âm
+Đi cảnh ngang
+150 giây
+Còn sống khi hết giờ
+3
+Bến cảng mất điện
+Từ trên xuống
+180 giây
+Còn sống khi hết giờ
+4
+Lõi phản ứng
+Đi cảnh ngang
+210 giây
+Hết giờ và hạ boss cuối
+Tổng thời gian tối thiểu của chiến dịch là 720 giây, tương đương 12 phút chơi chủ động. Thời gian chuẩn bị, tạm dừng, tải cảnh và bảng kết quả không được cộng vào bộ đếm này. Nếu boss cuối còn sống sau giây 210, màn bốn tiếp tục cho tới khi boss hoặc người chơi chết.
+Luồng từ bắt đầu tới kết thúc
+Trang chủ → chọn điều khiển → hướng dẫn ngắn → màn một → kết quả màn → chuyển cảnh → màn hai → màn ba → màn bốn → kết quả chiến dịch. Khi chết, luồng đi sang màn thất bại và cho chơi lại màn hiện tại; không tự nhảy tới màn tiếp theo.
+Điều chỉnh so với bản hiện có
+Bản hiện có yêu cầu tìm đủ ba lõi và quay về vòng cứu hộ sau 180 giây. Trong chiến dịch mới, các màn một đến ba tự hoàn thành theo thời gian sống sót. Lõi tín hiệu trở thành mục tiêu phụ để nhận điểm và kể chuyện, không khóa việc chuyển màn. Chế độ chọn bốn bản đồ rời có thể giữ trong mục Luyện tập.
+Phạm vi phiên bản hoàn chỉnh
+Phạm vi bắt buộc gồm bốn màn, hai kiểu di chuyển 2D, chiến đấu có thể chết, chuyển màn ổn định, điều khiển chuột hoặc chạm, bàn tay và âm thanh. Tài khoản, database, lịch sử trực tuyến, nhiều người chơi và 3D tiếp tục nằm ngoài phạm vi hiện tại.
+03 Màn một Thị trấn bị phong tỏa
+Trải nghiệm và hình ảnh
+Người chơi tự đi giữa các con phố từ trên xuống, quan sát quái và bắn theo hướng ngắm. Phố có vỉa hè, nhà đóng cửa, xe tải, hàng rào, cây đổ, biển hiệu hỏng và vũng nước. Màu chủ đạo là xanh xám lạnh; đèn đường và cửa sổ còn điện dùng màu hổ phách để dẫn hướng. Mưa và sương tạo chiều sâu nhưng không che mất vùng tấn công.
+Bố cục có thể chơi được
+Dùng thị trấn hiện có làm nền bố cục. Bổ sung đường vòng qua khu nhà, một quảng trường đủ rộng để tránh đòn, ba vị trí lấy lõi phụ và những điểm đạn dễ nhận biết. Mái nhà và hàng rào chặn đường, đạn; bụi cây trang trí không tự trở thành vật cản. Không tạo ngõ cụt bắt buộc khiến người chơi bị vây mà không có đường thoát.
+Thời gian
+Áp lực và nội dung
+0 đến 25 giây
+Hướng dẫn đi, ngắm và bắn; hai quái chạy nhanh vào từ lối nhìn thấy.
+25 đến 60 giây
+Quái nặng xuất hiện; buộc đi vòng qua vật chắn và thay đạn đúng lúc.
+60 đến 105 giây
+Quái gây nhiễu làm cảm biến kém tin cậy; giới thiệu đèn chớp và bẫy.
+105 đến 150 giây
+Hai hướng tấn công phối hợp; mở thêm một điểm đạn và hồi máu.
+150 đến 180 giây
+Đợt cuối tăng áp lực, báo tín hiệu thoát sang rừng; không sinh quái ngay trên người chơi.
+Thắng thua và điểm nhấn
+Nếu còn máu khi bộ đếm về 0, khóa sinh quái, dừng chiến đấu và chốt kết quả màn đúng một lần. Người chơi nhìn thấy lối rừng sáng lên trong chuyển cảnh rồi sang màn hai. Nếu nhận đòn chí mạng cùng khung thời gian này, kết quả là chết; không được nhận thưởng hoặc chuyển màn.
+Mục tiêu phụ là lấy tối đa ba lõi tín hiệu, mỗi lõi cộng 300 điểm. Không buộc quay lại vòng xuất phát. Quái có thể giết người chơi ngay từ màn này; phần hướng dẫn chỉ bảo đảm điểm sinh ban đầu có khoảng trống để học điều khiển.
+Tài nguyên cần làm
+Một bộ ô nền phố và tường, ít nhất 12 nhóm đồ vật có biến thể, nhân vật đủ hoạt ảnh, bốn bộ quái, mưa nhẹ, vệt sáng đạn và âm nền phố hoang. Chỉ thay màu các hình chữ nhật hiện tại chưa đạt yêu cầu hình ảnh của màn này.
+04 Màn hai Rừng vọng âm
+Thay góc nhìn nhưng giữ nhân vật
+Sau màn một, cùng người chơi xuất hiện trong một rừng đêm nhìn ngang. Nhân vật đi trái phải, nhảy qua địa hình và bắn quái ở phía trước. Đây là 2D đi cảnh, không đổi sang Godot hoặc dựng thế giới 3D. Quần áo, màu nhận diện, vũ khí, máu và thanh tài nguyên vẫn nhất quán với màn trước.
+Địa hình và độ sâu của cảnh
+Cảnh có mặt đất phủ cỏ, bậc đá, rễ cây, cầu gỗ và đền bỏ hoang. Bầu trời, núi, rừng xa, cảnh chơi và tiền cảnh chạy ở tốc độ khác nhau để tạo chiều sâu. Đèn lồng đánh dấu đường an toàn; sương tập trung dưới vực và ở nền xa, không phủ kín mép bậc cần nhảy.
+Đoạn
+Mục đích thiết kế
+0 đến 20 giây
+Đoạn đất phẳng để học trái phải, nhảy, bắn và điểm tiếp đất.
+20 đến 55 giây
+Các bậc thấp và khe nhỏ; quái chạy tới từ hai phía có báo trước.
+55 đến 100 giây
+Cầu gỗ, tán cây và quái nặng; xen một khoảng nghỉ có vật phẩm.
+100 đến 150 giây
+Một bãi chiến đấu rộng gần cổng rừng; tăng số quái nhưng vẫn giữ đường tránh.
+Quy tắc điều khiển và va chạm mới
+Thông số khởi điểm để thử: đi 160 pixel logic mỗi giây, chạy 230, vận tốc nhảy 420, trọng lực 1.200 pixel mỗi giây bình phương. Nhảy từ mặt đất có thời gian trên không khoảng 0,7 giây; khe bắt buộc không rộng quá 80 pixel để còn dư khoảng an toàn. Không có nhảy hai lần ở phiên bản đầu.
+Cho phép ghi nhận lệnh nhảy sớm 0,12 giây trước khi chạm đất và trễ 0,10 giây sau khi rời mép. Rơi xuống vực mất 30 máu rồi trở về bậc an toàn gần nhất; nếu số máu còn lại không đủ, nhân vật chết. Không dùng cảm biến tiếp xúc đơn thuần để thay cho giải quyết trọng lực và đứng trên nền.
+Kết thúc màn
+Sống đủ 150 giây thì hoàn thành màn và chuyển sang bến cảng. Camera không tự cuốn người chơi ra khỏi màn hình để gây chết. Khi đủ giờ trong lúc nhân vật còn đang nhảy, hệ thống chốt trạng thái sống sau bước xử lý sát thương rồi mới chuyển cảnh; không yêu cầu bấm thêm một nút khó bằng tay.
+05 Màn ba Bến cảng mất điện
+Bố cục và chiến đấu
+Trở lại góc nhìn từ trên xuống trong bãi container ẩm tối. Container tạo nhiều lối vòng, cần cẩu trở thành điểm định hướng từ xa, mặt nước phản chiếu ánh đèn xanh nhạt. Người chơi phải đánh giá tiếng động ở hai phía thay vì chỉ đi trên một đường thẳng giữa bản đồ.
+Giữ cấu trúc bến cảng đang có, thêm nhánh đường ngang, vật che thấp và các vùng chiến đấu có ít nhất hai lối rút. Mặt nước, mép cảng và container là hình học va chạm rõ ràng. Đồ vật chỉ trang trí không được gây kẹt người hoặc chặn đạn một cách bất ngờ.
+Diễn biến trong 180 giây
+Khoảng chơi
+Biến đổi
+0 đến 35 giây
+Làm quen với container; quái nhanh đi theo đường vòng có thể nhìn thấy.
+35 đến 85 giây
+Quái gây nhiễu ở một nhánh; chuyển vị trí và dùng đèn để lấy lại cảm biến.
+85 đến 135 giây
+Vật chủ 300 máu xuất hiện; dạy nhận vòng nạp đòn và thời điểm lộ yếu.
+135 đến 180 giây
+Đợt phối hợp cuối và còi vô tuyến dẫn tới cửa nhà máy.
+Người sống sót có thể bị quái giết
+Nhiệm vụ phụ ở bến cảng có một người sống sót cần hộ tống, là nhân vật phụ (NPC) với 60 máu. Quái có thể chuyển mục tiêu và tấn công người này khi tới gần, có đường tiếp cận và hết thời gian hồi đòn. Máu về 0 khiến người được cứu chết, ngừng đi và không còn là mục tiêu sống.
+Cứu thành công cộng 500 điểm. Nếu người được cứu chết, chỉ nhiệm vụ phụ thất bại; nhân vật chính còn sống vẫn có thể vượt màn theo thời gian. Không tự hồi sinh người này trong cùng lượt. Khi chơi lại màn từ đầu, toàn bộ nhân vật và vật phẩm trở về trạng thái điểm kiểm tra.
+Giữ sự công bằng và khả năng đọc cảnh
+Nhiễu có thể làm mất dấu quái trên cảm biến hoặc tạo vệt hình, nhưng không được che thanh máu, thời gian và thông báo chết. Quái không đánh xuyên container để giết người chơi hay người hộ tống. Cần có âm thanh hoặc hình cảnh báo trước khi quái chuyển mục tiêu.
+NPC hộ tống là phần cần xây mới. Có thể làm sau khi luồng hai màn đầu và hệ thống chết đã hoạt động; tiêu chí chiến dịch đầy đủ vẫn phải kiểm tra trường hợp NPC sống, chết và bị tách khỏi người chơi.
+06 Màn bốn Lõi phản ứng
+Cảnh và mục tiêu cuối
+Đi cảnh ngang trong nhà máy ngừng hoạt động. Nền xa gồm khối lò và quạt lớn; cảnh chơi có sàn thép, cầu thang, bồn chứa, đường ống và các chỗ rò sáng xanh. Màu hổ phách dành cho đèn an toàn, đỏ cho đòn nguy hiểm, xanh lạnh cho môi trường nhiễm.
+Mục tiêu là sống ít nhất 210 giây và hạ Vật chủ cuối. Nếu boss chết sớm, người chơi vẫn phải giữ vị trí tới hết giờ. Nếu hết giờ trước, màn tiếp tục với boss còn sống; không báo thắng chỉ vì đồng hồ đã về 0. Khi cả hai điều kiện đạt và người chơi còn sống, chốt chiến dịch rồi mở kết quả cuối.
+Nhịp của màn
+Thời gian
+Trọng tâm
+0 đến 45 giây
+Đường sàn và bậc an toàn; giới thiệu rò nhiễm có cảnh báo.
+45 đến 100 giây
+Quái thường xen đợt choáng; yêu cầu quản lý băng đạn và né bẫy.
+100 đến 165 giây
+Tiến vào khu lò, cho một điểm đạn và hồi máu trước trận cuối.
+Từ giây 165
+Boss cuối xuất hiện trong đấu trường đủ rộng, có chỗ né và hai bậc ổn định.
+Boss cuối
+Boss cuối dùng thông số riêng: 800 máu, đòn mạnh 40 sát thương, giáp chỉ nhận một phần ba sát thương. Chu kỳ cơ bản giữ nạp đòn 1,4 giây và lộ yếu 3,2 giây để người chơi vận dụng điều đã học ở bến cảng. Điểm yếu phải được biểu đạt bằng hình, màu và âm thanh, không chỉ bằng chữ.
+Trên 50 phần trăm máu, boss dùng một đòn nện có vùng báo trước. Dưới 50 phần trăm, đòn thứ hai tạo vùng nguy hiểm phụ sau đòn nện; vùng này cũng phải báo trước, không sinh sát thương tức thì ở chân người chơi. Trong cửa sổ yếu, không đồng thời ép người chơi đứng vào vùng chết bắt buộc để gây sát thương.
+Kết quả chiến dịch
+Hiển thị thời gian sống, màn đã qua, số quái bị hạ, mục tiêu phụ, điểm và nguyên nhân chết nếu thất bại. Hiệu ứng kết thúc và kết quả chỉ phát một lần. Không yêu cầu kết nối database để kết thúc ván hoặc chơi lại.
+07 Quái có thể giết người chơi
+Quy tắc bắt buộc là quái tấn công gây mất máu thật. Khi máu người chơi bằng 0, chuyển sang trạng thái đang chết rồi thất bại; ngừng điều khiển, ngừng bắn và không cho chuyển màn.
+Nhận sát thương rõ ràng và có giới hạn
+Người chơi bắt đầu với 100 máu, không tự hồi theo thời gian. Mỗi đòn có mã và cửa sổ gây sát thương riêng; một đòn không được trừ máu nhiều lần chỉ vì hình hai nhân vật đang chồng lên nhau hoặc tốc độ vẽ cao. Sau đòn trực tiếp, có 0,45 giây miễn đòn trực tiếp kế tiếp để tránh chết do nhiều callback trong cùng khung hình.
+Cửa sổ miễn đòn không bỏ qua rơi vực hoặc nhiễm môi trường. Nhiễm tính theo nhịp 0,5 giây, tương đương 9 sát thương mỗi giây ở mức thường. Lướt chỉ tránh đòn cận chiến và đạn trong thời gian lướt, không vô hiệu hóa vùng nhiễm. Tạm dừng phải đóng băng cả hồi đòn, nhịp nhiễm và bộ đếm màn.
+Hoạt ảnh chết và khóa trò chơi
+Máu được chặn ở 0. Xử lý chết có cờ khóa để chỉ chạy một lần, dù nhiều quái cùng đánh.
+Xóa trạng thái giữ phím, giữ bắn, lệnh tay, kéo chạm và lệnh nhảy đang chờ. Không cho uống máu hoặc thay đạn sau khi đã chết.
+Phát hoạt ảnh ngã trong khoảng 0,8 giây và một âm thanh chết. Mô phỏng chiến đấu dừng; hoạt ảnh giao diện vẫn chạy để thấy cái chết.
+Giữ khung hình cuối, giảm sáng nền rồi mở Nhiệm vụ thất bại với nguyên nhân bị giết và tên màn.
+Nếu chết đúng lúc hết giờ, xử lý cái chết trước. Không nhận thưởng vượt màn, không tăng chỉ số màn và không tải màn kế tiếp.
+Chơi lại từ điểm kiểm tra
+Nút Chơi lại màn này khôi phục ảnh chụp trạng thái đầu màn: máu, đạn, kỹ năng, số màn và điểm đã chốt từ các màn trước. Quái, vật phẩm, NPC, bẫy và bộ đếm màn hiện tại được tạo lại. Không giữ vật phẩm đã nhặt hoặc điểm đã kiếm ở lượt vừa chết, tránh nhân đôi phần thưởng.
+Điểm kiểm tra bắt buộc ở bản đầu chỉ cần tồn tại trong phiên đang mở. Lưu để tiếp tục sau khi đóng ứng dụng là phần mở rộng; không gộp nó với lịch sử chơi hay tài khoản trực tuyến đang được hoãn.
+Khi quái giết người hộ tống
+NPC chết cũng khóa AI, tấn công và tương tác của chính NPC đó. Thông báo cứu hộ phụ thất bại chỉ phát một lần. Cái chết của NPC không tự đặt máu người chơi về 0 và không được gọi nhầm sự kiện thua của nhân vật chính.
+08 Quái vật và trí tuệ chiến đấu
+Loại
+Máu
+Sát thương
+Đặc tính và cách đối phó
+Kẻ săn đuổi
+45
+8
+Nhanh, ít máu; báo động tác vồ khoảng 0,25 giây. Né hoặc choáng rồi bắn.
+Kẻ bọc giáp
+135
+17
+Chậm, nhiều máu; báo đòn khoảng 0,65 giây. Giữ khoảng cách và dùng vật chắn.
+Kẻ gây nhiễu
+70
+10
+Gây nhiễu cảm biến ở gần, vẫn có đòn cận chiến. Đèn chớp tạm ngắt nhiễu.
+Vật chủ
+300
+32
+Giáp giảm sát thương còn một phần ba; sau đòn mạnh lộ yếu. Bản cuối tăng lên 800 máu và 40 sát thương.
+Các giá trị cơ bản tận dụng mã hiện có; nhịp báo đòn của quái thường, cửa sổ miễn đòn và thông số boss cuối là phần bổ sung. Mọi thông số đặt trong cấu hình để thử cân bằng, không ghi lặp ở hình vẽ và bộ luật.
+Trạng thái cần có
+Xuất hiện → tìm kiếm → điều tra tiếng động → truy đuổi → chuẩn bị đánh → gây sát thương → hồi đòn. Các trạng thái choáng, bị thương và chết có thể ngắt chuỗi theo luật. Riêng boss có thêm nạp đòn và lộ điểm yếu. Quái đã chết không còn tìm đường, tạo nhiễu, đánh hoặc nhận điểm tiêu diệt lần hai.
+Hai kiểu đường đi
+Trong góc nhìn từ trên xuống, tiếp tục dùng tìm đường quanh vật cản. Ở màn đi ngang, quái phải đứng trên nền, kiểm tra mép, chọn bậc có thể tới và dùng điểm nhảy được thiết kế trước. Không dùng trực tiếp thuật toán tìm đường mặt phẳng để làm quái leo xuyên sàn hoặc bay tới người chơi.
+Chọn mục tiêu và sinh quái
+Quái ưu tiên người chơi khi nhìn thấy hoặc nghe tiếng súng; nhiệm vụ bến cảng cho phép chuyển sang NPC ở gần nếu có đường tiếp cận. Đòn cận chiến cần cả khoảng cách và đường không bị chắn. Điểm sinh nằm ngoài vùng an toàn ban đầu, không nằm trong vật cản và không xuất hiện ngay trên vị trí đứng.
+Giới hạn mặc định 9 quái sống, nâng tối đa 12 sau khi đo hiệu năng. Khi đủ giới hạn, giữ lượt sinh trong hàng chờ, không âm thầm bỏ mất cấu hình. Không sinh thêm vô hạn chỉ để kéo dài thời gian ở màn boss cuối; áp dụng giới hạn đợt và lượng quái phụ rõ ràng.
+Phản hồi khi chiến đấu
+Hiển thị thanh máu khi quan sát được quái, lóe sáng khi trúng đạn, số sát thương vừa đủ đọc và hiệu ứng điện khi choáng. Quái chết ngã và mờ dần; vết cảnh có giới hạn số lượng và thời gian tồn tại để không tăng tải trong ván dài.
+09 Vũ khí tài nguyên và cân bằng
+Hạng mục
+Thông số khởi điểm
+Luật sử dụng
+Súng chính
+28 sát thương; 24 viên mỗi băng; 120 dự trữ
+Mỗi 0,18 giây tối đa một phát; thay đạn 1,65 giây. Đạn va chạm vật chắn trước mục tiêu.
+Túi máu
++40 máu, tối đa 100
+Đủ máu thì giữ nguyên túi ở cảnh. Không nhặt sau khi chết.
+Hộp đạn
++48 viên
+Nhặt một lần; lượng dự trữ bị giới hạn 180 để tránh tích vô hạn.
+Đèn chớp
+3 lượt; hồi 6 giây
+Quái thường choáng 3,5 giây; boss 1,5 giây. Ngắt đòn đang nạp.
+Bẫy điện
+3 lượt; hồi 3 giây; tồn tại 20 giây
+Quái thường choáng 4 giây, boss 2 giây; bẫy dùng một lần khi trúng mục tiêu.
+Lướt né
+25 thể lực; hồi 3 giây
+Chỉ ở góc nhìn từ trên xuống; không xuyên tường. Màn đi ngang dùng nút nhảy thay thế.
+Phần thưởng khi qua màn
+Khi vượt màn một đến ba, đặt máu đầu màn tiếp theo bằng giá trị lớn hơn giữa máu còn lại và 60, tối đa 100. Nạp đầy băng 24 viên như thưởng qua màn; dự trữ tăng 24 nhưng không quá 120 ở đầu màn. Thêm một lượt đèn và một lượt bẫy, mỗi loại tối đa ba; thể lực về 100. Phần thưởng chỉ cấp một lần cho mỗi lần hoàn thành màn hợp lệ.
+Bố trí vật phẩm
+Đặt đạn và hồi máu ở khoảng nghỉ giữa đợt, có đường tới được và dấu hiệu hình ảnh. Màn cuối phải có nguồn đạn cố định trước boss. Không bắt người chơi đợi vật phẩm ngẫu nhiên mới có đủ đạn thắng. Mức dễ có thể thêm một túi máu và giảm 20 phần trăm sát thương quái; cấu hình thường dùng các giá trị trong tài liệu.
+Điểm và mục tiêu phụ
+Giữ 100 điểm mỗi quái bị hạ và 300 điểm mỗi lõi. Cứu người ở bến cảng cộng 500. Mỗi màn hoàn thành thưởng 500; chiến dịch thắng thưởng thêm 1.000 và 5 nhân với máu còn lại làm tròn xuống. Điểm chỉ được chốt khi hoàn thành màn; chơi lại không giữ phần điểm kiếm ở lượt thua.
+Mục tiêu cân bằng là người chơi có thể vượt cả chiến dịch bằng tài nguyên bố trí trong cảnh, có cơ hội hồi phục sau sai sót và vẫn có thể chết nếu đứng chịu đòn. Cần thử riêng bàn phím, chạm và bàn tay; không xem kết quả mô phỏng tự động là bằng chứng duy nhất cho độ khó phù hợp.
+10 Điều khiển và hướng dẫn theo góc nhìn
+Thao tác
+Từ trên xuống
+Đi cảnh ngang
+Di chuyển
+WASD hoặc cần trái theo hai trục
+A D hoặc cần trái theo trục ngang
+Space hoặc nút vận động
+Lướt theo hướng đang đi
+Nhảy; có ghi nhận sớm và trễ ở mép
+Ngắm và bắn
+Chuột hoặc cần phải; F bắn dự phòng
+Hướng ngắm trên mặt phẳng cảnh; không xoay camera 3D
+R và nắm tay ngắn
+Thay đạn
+Thay đạn
+Q và E
+Đèn chớp và bẫy điện
+Đèn chớp và bẫy điện trên nền đứng
+Esc hoặc P
+Tạm dừng
+Tạm dừng cả rơi và trọng lực
+Bàn tay trong hai góc nhìn
+Trong màn từ trên xuống, giữ cách đang có: mở tay dịch chuyển để đi; chụm để đứng lại, ngắm và bắn; nắm để thay đạn. Vị trí tay thoải mái lúc vào màn là tâm điều khiển, có vùng chết để chống rung.
+Trong màn ngang, vị trí ngang của lòng bàn tay điều khiển trái phải. Cử chỉ nâng tay nhanh tạo một lệnh nhảy khi đang chạm đất hoặc còn trong khoảng trễ mép; phải hạ tay về vùng trung tính mới được nhảy lại. Giữ chụm để bắn theo hướng ngắm, vẫn cho phép đi ngang để không mất quyền điều khiển trên bậc. Đây là ánh xạ mới cần hiệu chỉnh và đo bằng tay thật.
+Dùng kỹ năng khi chỉ có một bàn tay
+Giữ nắm tay khoảng 0,8 giây mở vòng chọn kỹ năng và tạm dừng mô phỏng. Di chuyển ngón trỏ tới đèn hoặc bẫy rồi chụm thả để chọn. Hủy vòng chọn không tiêu hao tài nguyên. Chỉ trở lại chơi sau khi tay ổn định ở trạng thái thả; không để lệnh chọn biến thành một phát bắn hoặc bước đi. Nắm ngắn vẫn chỉ yêu cầu thay đạn một lần.
+Mất tín hiệu và học thao tác
+Giữ nguyên giới hạn dữ liệu cũ quá 250 ms phải dừng thao tác và tạm dừng. Nếu mất tay giữa cú nhảy, cả nhân vật, quái, trọng lực và bộ đếm đóng băng. Có tay lại không tự tiếp tục. Khi đổi góc nhìn, hiện hướng dẫn không tính giờ để thử thao tác mới, rồi người chơi chủ động bắt đầu.
+Menu, hiệu chỉnh và lựa chọn chuột hoặc chạm luôn phải có. Người chơi có thể đổi phương thức khi tạm dừng mà không làm ván mới, mất tài nguyên hoặc bỏ qua cái chết.
+11 Hình ảnh và hoạt họa ma mị
+Ngôn ngữ hình ảnh thống nhất
+Dùng pixel art có đường nét và vật liệu rõ ràng, không chỉ tô tối cảnh cũ. Hình 1 cho thấy mật độ chi tiết và không khí mong muốn; khi sản xuất cần chuyển thành ô nền, đồ vật và sprite nhỏ nhất quán, không cắt ảnh ý tưởng thành tài nguyên ghép cảnh. Nhân vật có áo tối và dấu nhận diện đỏ; quái có hình dáng riêng thay vì các vòng tròn khác màu.
+Thành phần
+Quy cách đề xuất
+Khung logic
+640 × 360, co giãn giữ tỷ lệ; chọn lọc pixel phù hợp, tránh làm mờ sprite khi phóng.
+Ô nền và va chạm
+Ô cơ sở 32 × 32; tường hoặc vật cao dùng nhiều ô. Vùng va chạm tách khỏi phần ảnh vượt ô.
+Người chơi
+Khung sprite 64 × 64, thân khoảng 32 × 48; điểm chân và tâm súng có tọa độ gắn rõ ràng.
+Hướng và hoạt ảnh
+Từ trên xuống có bốn bộ hướng, hỗ trợ ngắm tám hướng; đi ngang dùng hai hướng bằng lật hình hợp lệ.
+Boss
+Khung 128 × 128 hoặc lớn hơn nếu cần; vùng đánh không tự phình theo hào quang.
+Atlas
+PNG có alpha, padding và lề chống tràn; có dữ liệu từng frame, thời lượng và điểm neo.
+Danh sách hoạt ảnh tối thiểu
+Người chơi cần đứng, đi, chạy, bắn, thay đạn, nhận đòn và chết. Màn ngang thêm bắt đầu nhảy, đang lên, rơi và chạm đất. Quái cần di chuyển, chuẩn bị đánh, đánh, hồi đòn, choáng, nhận đòn và chết; boss thêm nạp đòn và lộ yếu. Sự kiện gây sát thương gắn với frame được định nghĩa, không phụ thuộc việc ảnh bắn có đang hiển thị hay không.
+Ánh sáng và cảnh nhiều lớp
+Màu nền chủ đạo là xanh than, xanh xám và rêu; ánh hổ phách dẫn đường, đỏ báo nguy, vàng báo điểm yếu. Mỗi cảnh vẫn có điểm sáng và vật thể trung gian để người chơi đọc được đường. Ở màn ngang, nền trời đứng yên, núi chạy khoảng 0,15, rừng xa 0,35, cảnh chơi 1,0 và tiền cảnh khoảng 1,1 so với camera.
+Giới hạn sương và lớp tối quanh khu có đòn đánh; khi tán cây che nhân vật thì giảm độ đậm của tán. Đạn, vật phẩm, mép nền và báo đòn phải nhìn rõ trên cả màn hình sáng lẫn tối. Rung màn hình và chớp sáng có mức giảm hoặc tắt trong cài đặt.
+12 Giao diện âm thanh và nhịp cảm xúc
+Giao diện trong khi chơi
+Đầu màn hiển thị tên màn, số màn trong chiến dịch và nhiệm vụ ngắn. Trong ván giữ máu, thể lực, đạn, bộ đếm sống sót và số lượt kỹ năng ở vị trí ổn định giữa hai góc nhìn. Màn ngang đổi tên nút vận động thành Nhảy; màn từ trên xuống là Lướt. Không đổi vị trí toàn bộ HUD khi chuyển cảnh.
+Thanh máu phải thể hiện số hoặc tỷ lệ đủ rõ khi nhân vật đang nguy hiểm. Đòn chí mạng có phản hồi riêng, nhưng không cần hiệu ứng bạo lực chi tiết để hiểu rằng người chơi đã chết. Cảm biến bị nhiễu không được làm biến mất nút tạm dừng hoặc thông báo thất bại.
+Các màn giao diện bắt buộc
+Trang chủ với Bắt đầu chiến dịch, Luyện tập, Hướng dẫn và Cài đặt.
+Chuẩn bị điều khiển với trạng thái webcam, tay, hiệu chỉnh và chế độ dự phòng.
+Kết quả màn với thời gian, điểm, máu và vật phẩm được chuyển sang; đếm ngược chuyển cảnh 5 giây, cho bỏ qua sau giây đầu.
+Tạm dừng với tiếp tục, chỉnh điều khiển và rời chiến dịch có xác nhận.
+Thất bại với nguyên nhân chết, chơi lại màn này, hướng dẫn tránh đòn và về trang chủ.
+Kết quả cuối phân biệt hoàn thành chiến dịch với bỏ dở hoặc bị giết.
+Âm thanh kể chuyện và cảnh báo
+Mỗi môi trường có lớp âm riêng: phố là mưa và tiếng điện, rừng là gió và tiếng cây, bến cảng là nước và kim loại, nhà máy là động cơ và nhiễu. Thêm bước chân theo bề mặt, súng, nạp đạn, quái chuẩn bị vồ, boss nạp đòn, bị thương và chết. Nhạc tăng áp lực theo đợt nhưng hạ âm để thông báo quan trọng nghe được.
+Giữ âm lượng nhạc và hiệu ứng tách riêng như phần cài đặt hiện có. Phát âm chết hoặc kết quả chỉ một lần. Khi tạm dừng, không để tiếng đòn đánh tiếp tục lặp; khi mất tay, báo ngắn gọn lý do. Âm thanh không được là dấu hiệu duy nhất của đòn nguy hiểm.
+Nhịp giữa hai kiểu màn
+Sau áp lực từ đợt cuối, dành chuyển cảnh ngắn cho nhân vật bước qua cửa rừng hoặc cổng nhà máy. Không tải cảnh bằng màn trắng đột ngột hoặc chờ mạng. Tải trước tài nguyên màn kế tiếp khi có thể; nếu lỗi tài nguyên, giữ kết quả đã chốt và cho thử tải lại, không quay sang trạng thái chết.
+13 Kết hợp với mã Flutter hiện có
+Mã đang chạy là Flutter 2D nhìn từ trên xuống, có bốn bản đồ rời, đi lại, đạn, quái, máu, kỹ năng, vật phẩm và nhận diện tay. Nhánh mới cần nối chiến dịch và thay bộ hình; không chuyển nền tảng sang Godot.
+Phần trong dự án
+Cách dùng trong bản mới
+lib/exploration/model.dart
+Giữ tính toán đạn, sát thương, hồi, vật phẩm và quái; tách quy tắc thắng khỏi cứu hộ cố định 180 giây.
+lib/exploration/world.dart
+Giữ bố cục và A* cho màn nhìn từ trên xuống; dữ liệu màn ngang phải mô tả nền, mép và điểm nhảy riêng.
+lib/exploration/painter.dart
+Giữ làm mốc so sánh; thay cảnh hình học đơn giản bằng sprite, ô nền, nhiều lớp và hiệu ứng có ngân sách.
+lib/exploration/app.dart
+Giữ HUD và thao tác; thay chọn màn rời mặc định bằng Bắt đầu chiến dịch, kết quả màn và chuyển cảnh.
+hand_input.dart và services/hand_bridge.dart
+Giữ hiệu chỉnh, preview và giới hạn dữ liệu 250 ms; thêm ánh xạ nhảy và vòng chọn kỹ năng.
+assets/audio và pubspec.yaml
+Giữ âm thanh có thể tái sử dụng; đăng ký hình, atlas và dữ liệu màn mới.
+Phần cần thêm mới
+Thêm CampaignController, PlayerState dùng chung, cấu hình từng màn, bộ mô phỏng đi cảnh ngang, quản lý điểm kiểm tra và bộ xử lý sát thương có mã đòn. Không xem màn ngang là một hiệu ứng xoay ảnh của bản đồ hiện tại; nó cần trọng lực, nền đứng và camera riêng.
+Bộ vẽ và ranh giới trách nhiệm
+Giữ Flutter cho giao diện và Dart cho luật. Flame đã có trong pubspec nên có thể dùng để tổ chức sprite và hoạt ảnh cho cả hai kiểu màn. Trong quá trình chuyển, mỗi màn chỉ có một bộ mô phỏng chịu trách nhiệm máu và va chạm; lớp vẽ không được tự trừ máu lần thứ hai.
+Tài liệu Flame xác định phát hiện va chạm và phản ứng sau va chạm là hai việc khác nhau; callback không tự giải quyết đứng trên nền hoặc đạn đi quá nhanh. Vì vậy cần giữ kiểm tra đoạn đường đạn và bước vật lý nhỏ đang dùng, đồng thời viết giải quyết va chạm nền cho màn ngang. Tham khảo kỹ thuật ở mục nguồn cuối tài liệu.
+14 Trạng thái chuyển màn và điểm kiểm tra
+Một bộ điều phối cho cả chiến dịch
+Dùng các trạng thái Menu, Loading, Playing, Paused, StageClear, Transition, Dying, GameOver và Victory. Bộ điều phối sở hữu số màn, bộ đếm đang chơi và kết quả đã chốt. Mô phỏng từng màn sở hữu vị trí, đạn và quái, đọc PlayerState dùng chung; không giữ thêm một bản máu hoặc đồng hồ độc lập ở HUD.
+Thứ tự xử lý mỗi bước chơi
+Nhận đầu vào hợp lệ và cập nhật mô phỏng bằng bước thời gian nhỏ.
+Giải quyết đạn, đòn cận chiến và sát thương môi trường; kiểm tra máu về 0.
+Nếu chết thì đi vào Dying và dừng kiểm tra điều kiện vượt màn.
+Nếu còn sống, xét bộ đếm và điều kiện boss của màn hiện tại; chốt StageClear một lần.
+Cấp thưởng một lần, tạo điểm kiểm tra đầu màn tiếp theo, tải tài nguyên và chuyển cảnh.
+Dữ liệu phải cấu hình được
+Trường
+Ví dụ và ý nghĩa
+id và nextStageId
+town_01 → forest_02; màn cuối không có màn kế tiếp.
+viewMode
+topDown hoặc sideScroll; quyết định bộ mô phỏng, camera và hướng dẫn.
+durationSeconds và clearRule
+180 và survive; màn cuối 210 và surviveAndBossDefeated.
+spawnPlan và maxAlive
+Danh sách thời điểm, loại, vị trí sinh; giới hạn số quái đang sống.
+mapAsset và artSet
+Đường tới dữ liệu nền, vật cản, bậc và bộ hình của môi trường.
+checkpoint và rewards
+Trạng thái đầu màn, điểm đã chốt, tài nguyên thưởng và cờ đã nhận.
+Không để chế độ mới phá phần đang chạy
+Không dùng lại hằng rescueAt toàn cục cho mọi màn. Tách thao tác nhảy và lướt thành hai ý định điều khiển; bộ điều phối chọn ý định phù hợp với góc nhìn. Khi tải màn, xóa đạn, bẫy, quái, cảm biến và lệnh giữ cũ. Khi tải lại sau lỗi, không cấp lại thưởng và không tăng số màn thêm lần nữa.
+Không cần database cho các trạng thái này. Các thao tác lưu tiến trình sau khi đóng ứng dụng chỉ làm ở giai đoạn mở rộng, sau khi đã kiểm tra được chơi lại trong một phiên không nhân đôi điểm hoặc vật phẩm.
+15 Tài nguyên và các bước thực hiện
+Nhóm bàn giao
+Yêu cầu kiểm tra
+Nhân vật chính
+Bộ hướng từ trên xuống và đi ngang cùng nhận diện; đủ hoạt ảnh bắn, nhận đòn và chết, có điểm chân và đầu súng.
+Quái và boss
+Bốn loài, mỗi loài có silhouette riêng; frame báo đòn và frame gây sát thương được ghi trong dữ liệu.
+Bốn môi trường
+Bốn bộ ô nền và đồ vật, nền xa cho màn ngang, vùng va chạm và đường đi có thể kiểm tra độc lập.
+Hiệu ứng và HUD
+Đạn, trúng đạn, choáng, báo đòn, lộ yếu, nhiễm, chết và chuyển cảnh; có giới hạn số lượng.
+Âm thanh
+Bốn âm nền, bước chân và hiệu ứng chiến đấu; có nguồn hoặc quyền dùng rõ ràng.
+Dữ liệu
+Tệp cấu hình màn, atlas, thời lượng hoạt ảnh, điểm sinh và tài nguyên; tên tệp thống nhất, không thất lạc khi xuất bản.
+Giai đoạn một Làm bản chơi thử hai màn
+Hoàn thành một đoạn phố và một đoạn rừng, cùng nhân vật, sát thương giết người, cái chết, chơi lại và chuyển màn. Dùng tài nguyên tạm có nhãn; chỉ chấp nhận giai đoạn này khi chơi xuyên hai kiểu góc nhìn và mọi trường hợp chết đều chặn được chuyển màn.
+Giai đoạn hai Hoàn thiện hình ảnh và bốn màn
+Sản xuất bộ hình chính thức, thêm bến cảng, người hộ tống và nhà máy với boss cuối. Hoàn thành tất cả cấu hình đợt và vật phẩm. Mỗi bộ hình phải thay được bản tạm trước khi bắt đầu tối ưu và nghiệm thu, không chỉ ghép ảnh nền đẹp phía sau nhân vật hình tròn.
+Giai đoạn ba Điều khiển và chất lượng bản phát hành
+Hiệu chỉnh tay cho hai góc nhìn, hoàn thiện menu kỹ năng, thử bằng chuột và chạm, đo hiệu năng và xuất Web cùng Windows. Kiểm tra Android giả lập theo mô hình Python chạy trên laptop hiện có. Chơi bằng chạm không cần webcam. Không công bố Android tự nhận diện tay trên điện thoại nếu chưa xây phần đó.
+Kế hoạch và giới hạn
+Thuyết minh cũ nêu phạm vi thử nghiệm hai tuần cho một màn phòng trực. Bản chiến dịch bốn màn, hai kiểu di chuyển và bộ sprite mới có phạm vi lớn hơn; cần ước lượng lại sau khi duyệt bản chơi thử hai màn. Chốt công việc theo tiêu chí nghiệm thu trên thay vì hứa toàn bộ hình ảnh và tính năng trong cùng mốc cũ.
+16 Nghiệm thu luật chơi và chuyển màn
+Mã
+Tình huống thử
+Kết quả bắt buộc
+T01
+Màn một hết 180 giây, người chơi còn máu
+Chốt thưởng một lần và sang màn rừng; không yêu cầu đủ lõi phụ.
+T02
+Nhận đòn chí mạng đúng bước hết giờ
+Chết và thất bại; không phát thưởng, không tải màn kế tiếp.
+T03
+Quái chạm liên tục vào người chơi
+Máu giảm theo đòn hợp lệ và hồi đòn; không giảm theo số khung vẽ.
+T04
+Nhiều quái cùng đánh khi còn ít máu
+Xử lý chết đúng một lần; không còn bắn, nhặt vật phẩm hoặc dùng kỹ năng.
+T05
+Chơi lại màn đã chết sau khi nhặt nhiều đồ
+Khôi phục điểm kiểm tra đầu màn; không nhân đôi đạn, điểm hoặc thưởng.
+T06
+Tạm dừng giữa nhảy, nạp boss hoặc nhiễm
+Tất cả chuyển động và bộ đếm chơi đóng băng; giao diện tạm dừng vẫn dùng được.
+T07
+Mất tay hoặc nhận gói quá 250 ms
+Hủy lệnh giữ và tạm dừng; không tự bắn hoặc tự đi khi có tay trở lại.
+T08
+Đạn đi nhanh qua vật cản mỏng
+Vật cản chặn trước mục tiêu; một viên không gây sát thương nhiều lần.
+T09
+Boss chưa chết khi màn bốn hết giờ
+Tiếp tục trận boss; chỉ thắng khi boss chết và người chơi còn sống.
+T10
+Người hộ tống bị quái giết
+Nhiệm vụ phụ thất bại một lần; không gọi nhầm cái chết của người chơi.
+Tình huống địa hình bắt buộc
+Ở góc nhìn từ trên xuống, thử mọi lõi, điểm đạn và đường vòng để không có vật phẩm trong vật cản hoặc vị trí không tới được. Ở màn ngang, thử nhảy sớm, nhảy sau mép, chạm đầu vào sàn, rơi vực và mất tay giữa không trung. Nhân vật và quái không được đi xuyên nền khi khung hình bị chậm.
+Điều kiện để kết luận hoàn chỉnh
+Chơi xuyên cả bốn màn bằng tài nguyên bố trí thật, không bật bất tử, cộng đạn hoặc dịch chuyển trong công cụ kiểm tra. Phải có ít nhất một lượt hoàn thành và các lượt chết bằng các nguồn sát thương khác nhau. Mô phỏng tự động cần được bổ sung bằng người chơi thật trên thiết bị đích.
+17 Nghiệm thu hình ảnh hiệu năng và nguồn
+Hình ảnh phải đạt điều gì
+Hai kiểu góc nhìn thể hiện rõ nhưng cùng nhân vật, màu nhận diện, HUD và không khí. Bốn môi trường nhận ra được khi bỏ tên màn.
+Nhân vật có hoạt ảnh đi, bắn, trúng đòn và chết; quái có báo đòn và kết thúc đòn. Không bàn giao chỉ một ảnh đứng kéo qua cảnh.
+Thấy rõ mép bậc, vùng đánh, vật phẩm và hướng nguy hiểm. Sương, nhiễu và tiền cảnh không làm mất thông tin sống còn.
+Tất cả atlas không tràn mép, sprite không nhòe khi phóng theo tỷ lệ mục tiêu và không đổi kích thước đột ngột khi chuyển màn.
+Hiệu năng và bản xuất
+Mục tiêu thử nghiệm là 60 khung hình mỗi giây trên laptop và tối thiểu 30 trên thiết bị hoặc giả lập cấu hình mục tiêu. Đây là mục tiêu nghiệm thu, chưa phải kết quả đo của phiên bản mới. Đo khi có nhiều quái, sương, đạn và boss; không chỉ đo ở menu. Hạn chế số hiệu ứng, dùng lại đạn và hạt, chỉ vẽ đối tượng trong vùng nhìn.
+Chạy liên tục ít nhất một chiến dịch 12 phút và chơi lại nhiều lần, theo dõi bộ nhớ và số đối tượng. Bản Web phải tải đủ tài nguyên không dựa vào thư mục tạm. Bản Windows giữ dữ liệu đi kèm. Lỗi âm thanh, mất tay hoặc thiếu ảnh phải có thông báo và lối khôi phục, không âm thầm treo màn.
+Cơ sở của thiết kế
+Yêu cầu hiện tại của người dùng: Flutter 2D; nhân vật đi lại; đồ họa ma mị; kết hợp hai ảnh tham khảo; sống sót đủ giờ thì chuyển màn; quái có thể giết người. Hai ảnh tham khảo được giữ nguyên dấu nguồn trong tài liệu, không dùng làm atlas sản phẩm.
+Đối chiếu dự án: DEAD_SIGNAL.md; flutter_app/lib/exploration/model.dart, world.dart, painter.dart, app.dart và hand_input.dart; flutter_app/lib/services/hand_bridge.dart; flutter_app/pubspec.yaml. Đối chiếu thuyết minh gốc: Thuyết minh đề tài GesturePlay.docx. Các phần chiến dịch, đi ngang, sprite mới, NPC và chết có hoạt ảnh trong tài liệu là yêu cầu phát triển, không phải tuyên bố đã có trong mã.
+Tài liệu kỹ thuật chính thức: Flame Assets Directory Structure, https://docs.flame-engine.org/latest/flame/structure.html; Flame Collision Detection, https://docs.flame-engine.org/latest/flame/collision_detection.html. Truy cập ngày 02 tháng 11 năm 2026. Khi triển khai, kiểm tra API theo phiên bản Flame đang khóa trong dự án.
+Minh họa được tạo cho tài liệu
+Hình 1 tạo bằng công cụ image_gen chế độ tích hợp và lưu tại docs/design_assets/dinh_huong_my_thuat.png. Yêu cầu tạo hình: một bảng định hướng gồm phố hoang nhìn từ trên xuống và rừng đi ngang, cùng người sống sót áo tối khăn đỏ, quái bóng tối, ánh xanh lạnh và đèn hổ phách; cảnh nhiều lớp, có đường đi rõ; không chữ, logo, 3D hoặc thương tích chi tiết. Ảnh chỉ mô tả mức không khí mong muốn; tài nguyên chạy thật cần được sản xuất và kiểm tra riêng.
