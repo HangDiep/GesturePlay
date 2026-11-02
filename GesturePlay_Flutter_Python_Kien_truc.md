@@ -1,58 +1,21 @@
-# GesturePlay — kiến trúc đã chốt: Flutter/Flame + Python nhận diện
+# GesturePlay — Flutter 2D và Python nhận diện
 
-Nền tảng: **Windows trên laptop**. Đây là kiến trúc hiện tại theo yêu cầu bắt buộc dùng Flutter. Các lựa chọn Pygame/FastAPI trong tài liệu thiết kế cũ là phương án trước khi chốt yêu cầu này.
+| Thành phần | Công nghệ |
+| --- | --- |
+| Chọn bản đồ, HUD, tạm dừng, kết quả, chuột/bàn phím/chạm | Flutter widgets và Dart |
+| Bốn bản đồ, nhân vật, quái, đạn, kỹ năng, vật phẩm, thời gian và điểm | Dart trong lib/exploration |
+| Vẽ cảnh 2D, nhân vật, hiệu ứng và sơ đồ | Flutter CustomPainter |
+| Tìm đường và va chạm | A* và hình học Dart; quái không đi xuyên vật cản |
+| Webcam, MediaPipe, hiệu chỉnh và nhận diện cử chỉ | Python |
+| Truyền trạng thái tay và preview | WebSocket nội bộ; web cổng 8766, Windows cổng 8765 |
+| Mở ứng dụng và dịch vụ web | Node chỉ điều phối Flutter Web và Python |
 
-| Phần | Công nghệ thực sự chạy |
-|---|---|
-| Menu, chọn độ khó, chuẩn bị tay, đếm ngược, HUD, tạm dừng, kết quả | Flutter / Dart |
-| Robot, chuyển động, trọng lực, sinh gai/xu, va chạm, thời gian, điểm | Flame + Dart |
-| Lưu kết quả và kỷ lục local | Dart, JSON ghi bất đồng bộ |
-| Mở webcam, lật ảnh, Hand Landmarker, chụm/thả, hiệu chỉnh | Python + OpenCV + MediaPipe |
-| Nối hai tiến trình trên cùng laptop | WebSocket tại `127.0.0.1:8765` |
+Luồng: Webcam → Python nhận diện → HandBridge Dart → FieldHandInput → ExplorationModel → Flutter vẽ giao diện.
 
-Python không chạy luật chơi, không tính điểm và không vẽ cửa sổ game trong lệnh chạy chính. Mô hình chỉ được nạp khi người chơi chọn chơi bằng tay. Chế độ bàn phím hoạt động hoàn toàn trong Flutter/Flame.
+`flutter_app/lib/main.dart` mở `ExplorationApp`. `npm run web`, `npm run windows` và các file .bat chỉ gọi Flutter. Godot không tham gia luồng chạy hiện tại. Flame còn là phụ thuộc để giữ khả năng kiểm tra các phần chơi trước đây, không phải bộ vẽ của phần chơi mới.
 
-```mermaid
-flowchart LR
-    Camera[Webcam laptop] --> Python[Python: nhận diện và hiệu chỉnh tay]
-    Python -->|trạng thái tay + số đếm lệnh nhảy| Bridge[Flutter: kết nối nội bộ]
-    Bridge --> Flame[Flame: vật lý, va chạm, điểm]
-    Flame --> UI[Flutter: HUD, pause, kết quả]
-    UI --> Storage[Dart: lưu thành tích local]
-```
+Python không tính điểm, xử lý đạn, chạy quái hoặc mở cửa sổ game. Mất tay, mất kết nối hoặc dữ liệu quá hạn khiến Dart dừng thao tác và tạm dừng; không tự tiếp tục khi có tay lại. Preview chỉ mở khi chọn bàn tay.
 
-## Một game đang triển khai
+Hiện chưa có đăng nhập/database/lịch sử lượt chơi theo yêu cầu. Kết quả được hiển thị cuối ván. Cài đặt âm thanh và webcam dùng lưu trữ thiết bị.
 
-`runner` — Chạy vượt chướng ngại vật: ba độ khó, 120 giây chơi thực, +10 vượt một cụm gai, +20 mỗi xu. Chỉ nhảy khi chạm đất. Chơi lại tạo UUID local mới, đặt lại toàn bộ trạng thái. Mất tay/kết nối/quá hạn dữ liệu sẽ tạm dừng; có tay lại cần xác nhận tiếp tục. Giữ chụm chỉ phát một lệnh, phải thả rồi chụm cho lần tiếp theo.
-
-## Giao thức nhận diện
-
-Python chỉ lắng nghe loopback; không mở ra LAN/Internet. Chỉ một kết nối điều khiển tại một thời điểm. Dữ liệu JSON phiên bản 1 được gửi tối đa 20 lần/giây; ảnh JPEG preview 320 × 240 tối đa 8 lần/giây khi Flutter yêu cầu. Khi chơi, preview mặc định tắt. Không có video ghi lên đĩa.
-
-Packet trạng thái gồm `epoch`, `seq`, `valid`, `ready`, `released`, `pinched`, `jump_id`, `jump_age_ms`, tâm bàn tay, tỷ lệ chụm, hai đầu ngón, tuổi kết quả và trạng thái camera/model. `jump_id` tăng khi có cạnh thả → chụm, được giữ qua các lần gửi. Flutter xử lý mỗi ID một lần; bỏ lệnh quá cũ và bỏ lệnh trong thời gian chuẩn bị/đếm ngược/pause. MediaPipe vẫn dùng timestamp monotonic tăng nghiêm ngặt. Tuổi ảnh và tuổi lệnh được tính bằng monotonic; `sent_at_ms` chỉ bổ sung ước lượng thời gian vận chuyển vì cả hai tiến trình dùng cùng đồng hồ Windows.
-
-Các lệnh Flutter gửi: `start`, `stop`, `restart`, `preview`, `calibrate_open`, `calibrate_closed`, `calibrate_reset`, `shutdown`. Không có lệnh tải/chạy file Python tùy ý. Camera index/backend được kiểm tra; phải đóng worker cũ trước khi đổi camera. Nếu worker không đóng sạch, không mở thêm camera/model thay thế.
-
-## Vòng đời
-
-- Mở Flutter vào menu: chưa mở webcam hay Python.
-- Chọn chơi bằng tay: Flutter thử nối dịch vụ hiện có; nếu chưa có, tự chạy `.venv/Scripts/python.exe main.py`.
-- Chuẩn bị: camera và một HandLandmarker hoạt động; xem preview và hiệu chỉnh F1/F2.
-- Về menu/kết thúc: gửi stop, dừng camera/model ngoài luồng vẽ; giữ kết nối nhẹ để bảo lưu hiệu chỉnh trong phiên.
-- Chơi bàn phím: không cần Python hay webcam.
-- Đóng Flutter: kết nối mất; Python tự dừng tài nguyên và thoát sau thời hạn idle nếu không có kết nối. Khi dispose bình thường, Flutter gửi shutdown cho tiến trình do mình mở.
-
-## Lưu dữ liệu
-
-Flutter lưu `flutter_app/data/runner_results.json`, tối đa 100 dòng, bảo lưu kỷ lục theo độ khó và kiểu điều khiển. Lưu bất đồng bộ, chống ghi trùng theo UUID local và có thử lại. Đây chưa phải kết quả được máy chủ xác nhận. Chưa triển khai tài khoản, xác thực, database tài khoản hoặc bảng xếp hạng online; các phần đó không được đưa vào Python nhận diện.
-
-## Mã nguồn
-
-- `flutter_app/lib/game/`: mô hình vật lý, controller cảnh, thành phần Flame.
-- `flutter_app/lib/ui/runner_app.dart`: toàn bộ giao diện Flutter.
-- `flutter_app/lib/services/`: cầu nối nhận diện, tìm đường dẫn dự án, lưu kết quả bằng Dart.
-- `hand_service/server.py`: giao thức WebSocket nhận diện, hoàn toàn không import Pygame.
-- `core/camera.py`, `hand_tracker.py`, `gestures.py`, `runtime.py`, `shared_state.py`: lõi nhận diện Python.
-- `legacy_pygame_main.py`, `client/`, `ui/`: bản thử Pygame được giữ làm tham khảo; không chạy từ launcher mới.
-
-Đọc `README.md` để chạy và kiểm tra môi trường Windows. Không coi kiểm tra headless hoặc mô phỏng 120 giây là bằng chứng về webcam thật hay hiệu năng trên màn hình thực tế.
+Luật và hướng dẫn tại [DEAD_SIGNAL.md](DEAD_SIGNAL.md). Kiến trúc Sky Runner trước đây được giữ trong docs/LEGACY_ARCHITECTURE.md.

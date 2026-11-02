@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gestureplay/services/hand_bridge.dart';
 import 'package:gestureplay/services/local_scores.dart';
+import 'package:gestureplay/services/score_storage_io.dart';
 import 'package:gestureplay/ui/runner_app.dart';
 
 void main() {
@@ -28,7 +29,7 @@ void main() {
     await tester.pumpWidget(
       GesturePlayApp(
         bridge: HandBridge(autoLaunch: false),
-        scores: LocalScores(File('${dir.path}/scores.json')),
+        scores: LocalScores(FileScoreStorage(File('${dir.path}/scores.json'))),
       ),
     );
     await tester.pump();

@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'project_paths.dart';
+import 'hand_platform.dart';
 
 class HandPacket {
   HandPacket(this.data);
@@ -38,7 +37,15 @@ class HandPacket {
 /// Only small local hand packets enter Dart; no Python game code is executed.
 class HandBridge extends ChangeNotifier {
   HandBridge({this.autoLaunch = true, Uri? uri, int Function()? clock})
-    : uri = uri ?? Uri.parse('ws://127.0.0.1:8765') {
+    : uri =
+          uri ??
+          Uri.parse(
+            const String.fromEnvironment('HAND_SERVICE_URL').isNotEmpty
+                ? const String.fromEnvironment('HAND_SERVICE_URL')
+                : !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+                ? 'ws://10.0.2.2:8765'
+                : 'ws://127.0.0.1:8765',
+          ) {
     _watch.start();
     _clock = clock ?? () => _watch.elapsedMilliseconds;
   }
@@ -48,8 +55,8 @@ class HandBridge extends ChangeNotifier {
   late final int Function() _clock;
   final preview = ValueNotifier<Uint8List?>(null);
   HandPacket? latest;
-  WebSocket? _socket;
-  Process? _process;
+  HandSocket? _socket;
+  final _host = HandHost();
   StreamSubscription<dynamic>? _subscription;
   bool connected = false,
       connecting = false,
@@ -70,6 +77,41 @@ class HandBridge extends ChangeNotifier {
   bool get ready => valid && latest?.flag('ready') == true;
   bool get released => valid && latest?.flag('released') == true;
   bool get pinched => valid && latest?.flag('pinched') == true;
+  String get statusMessage {
+    if (error != null) return error!;
+    if (!connected) {
+      return connecting ? 'Đang kết nối nhận diện…' : 'Chưa kết nối nhận diện.';
+    }
+    final packet = latest;
+    if (packet == null) return 'Đang chờ dữ liệu bàn tay…';
+    final camera = packet.text('camera_phase'),
+        tracker = packet.text('tracker_phase');
+    if (camera == 'error') {
+      return packet.text('camera_message', 'Không mở được webcam.');
+    }
+    if (tracker == 'error') {
+      return packet.text(
+        'tracker_message',
+        'Bộ nhận diện gặp lỗi. Hãy thử lại.',
+      );
+    }
+    if (camera == 'starting') return 'Đang mở webcam…';
+    if (tracker == 'starting') {
+      return 'Đang nạp nhận diện tay. Giữ webcam mở và chờ một chút…';
+    }
+    if (!valid) {
+      if (packet.flag('valid') && ageMs > 250) {
+        return 'Tín hiệu tay bị trễ. Giữ tay rõ trong khung hình.';
+      }
+      return packet.text('reason', 'Đưa một bàn tay rõ vào webcam.');
+    }
+    if (packet.flag('fist_pending')) return 'Giữ nắm tay ổn định để khóa cửa.';
+    if (packet.flag('fist')) return 'Đã nhận nắm tay. Mở tay để thao tác tiếp.';
+    if (!ready) return 'Đã thấy tay. Giữ ổn định một chút…';
+    return pinched
+        ? 'Đang chụm · thả để chọn, di chuyển bàn tay để kéo.'
+        : 'Tay sẵn sàng · di chuyển ngón trỏ, chụm rồi thả để chọn.';
+  }
 
   void acceptPacket(Map<String, dynamic> json) {
     if (json['type'] == 'error') {
@@ -150,7 +192,7 @@ class HandBridge extends ChangeNotifier {
         attempt++
       ) {
         try {
-          final pending = WebSocket.connect(uri.toString());
+          final pending = HandSocket.connect(uri);
           final socket = await pending.timeout(
             const Duration(seconds: 2),
             onTimeout: () {
@@ -171,7 +213,7 @@ class HandBridge extends ChangeNotifier {
           }
           _socket = socket;
           connected = true;
-          _subscription = socket.listen(
+          _subscription = socket.stream.listen(
             (message) {
               if (_disposed || generation != _generation) return;
               if (message is String) {
@@ -196,37 +238,14 @@ class HandBridge extends ChangeNotifier {
           if (kDebugMode && attempt == 0) {
             debugPrint('Hand service connection: $connectionError');
           }
-          if (autoLaunch && !launched && _process == null) {
+          if (autoLaunch &&
+              _host.canLaunch &&
+              !launched &&
+              !_host.ownsProcess) {
             launched = true;
-            if (!File(ProjectPaths.python).existsSync() ||
-                !File(ProjectPaths.service).existsSync()) {
-              throw StateError(
-                'Chưa tìm thấy phần nhận diện. Hãy mở từ thư mục dự án.',
-              );
-            }
-            final process = await Process.start(
-              ProjectPaths.python,
-              [
-                '-u',
-                ProjectPaths.service,
-                '--port',
-                '${uri.port}',
-                '--idle-timeout',
-                '5',
-              ],
-              workingDirectory: ProjectPaths.locateRoot(),
-              environment: {'PYTHONIOENCODING': 'utf-8'},
-            );
-            _process = process;
-            process.stdout.drain<void>();
-            process.stderr.drain<void>();
-            unawaited(
-              process.exitCode.then((_) {
-                if (identical(_process, process)) _process = null;
-              }),
-            );
+            await _host.launch(uri.port);
           }
-          if (!autoLaunch || attempt == 39) rethrow;
+          if (!autoLaunch || !_host.canLaunch || attempt == 39) rethrow;
           await Future<void>.delayed(const Duration(milliseconds: 150));
         }
       }
@@ -248,7 +267,7 @@ class HandBridge extends ChangeNotifier {
   }
 
   void send(String action, [Map<String, dynamic> values = const {}]) {
-    if (_socket?.readyState == WebSocket.open) {
+    if (_socket?.isOpen == true) {
       _socket!.add(
         jsonEncode({'type': 'command', 'action': action, ...values}),
       );
@@ -317,7 +336,7 @@ class HandBridge extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _generation++;
-    if (_process != null) {
+    if (_host.ownsProcess) {
       send('shutdown');
     } else {
       send('stop');

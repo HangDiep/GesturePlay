@@ -50,6 +50,18 @@ def landmarker_options(config: AppConfig, callback):
     )
 
 
+def is_fist(landmarks, aspect_ratio=4 / 3):
+    """Require all four fingers folded toward the palm, independent of rotation."""
+    if not landmarks or len(landmarks) < 21:
+        return False
+    def distance(a, b):
+        return math.hypot((a.x - b.x) * aspect_ratio, a.y - b.y)
+    wrist = landmarks[0]
+    folded = [distance(landmarks[tip], wrist) < distance(landmarks[pip], wrist) * 1.05
+              for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18))]
+    return all(folded)
+
+
 class HandTracker:
     def __init__(self, config: AppConfig, state: SharedState) -> None:
         self.config = config
@@ -106,6 +118,7 @@ class HandTracker:
                       (landmarks[8].x, landmarks[8].y)) if landmarks else None
             self.state.publish_hand(HandResult(
                 timestamp_ms, frame_id, captured_at_ns, completed_at_ns, *center, pinch, points,
+                is_fist(landmarks, aspect),
             ))
         except Exception as exc:
             # Không để ngoại lệ Python thoát qua biên callback native.

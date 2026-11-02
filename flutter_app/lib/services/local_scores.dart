@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
+import 'score_storage.dart';
 import '../game/runner_model.dart';
 
 class LocalScores {
-  LocalScores(this.file);
-  final File file;
+  LocalScores(this.storage);
+  final ScoreStorage storage;
   List<Map<String, dynamic>> records = [];
   String? error;
   Future<void> _pending = Future<void>.value();
@@ -19,8 +19,9 @@ class LocalScores {
 
   Future<void> load() async {
     try {
-      if (!await file.exists()) return;
-      final json = jsonDecode(await file.readAsString());
+      final contents = await storage.read();
+      if (contents == null) return;
+      final json = jsonDecode(contents);
       if (json is! Map || json['version'] != 1 || json['rounds'] is! List) {
         throw const FormatException();
       }
@@ -79,13 +80,7 @@ class LocalScores {
         updated = updated.where((r) => keep.contains(r['session_id'])).toList();
       }
       try {
-        await file.parent.create(recursive: true);
-        final temporary = File('${file.path}.tmp');
-        await temporary.writeAsString(
-          jsonEncode({'version': 1, 'rounds': updated}),
-          flush: true,
-        );
-        await temporary.rename(file.path);
+        await storage.write(jsonEncode({'version': 1, 'rounds': updated}));
         records = updated;
         error = null;
         success = true;

@@ -8,10 +8,10 @@ import unittest
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from core.shared_state import HandResult, SharedState
-from hand_service.server import HandServer
+from hand_service.server import HandServer, local_web_origin
 
 
 class FakeRuntime:
@@ -89,6 +89,29 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await socket.send(json.dumps({"type": "command", "action": "start", "camera_index": -1}))
             await self.packet(socket, "error")
             self.assertFalse(self.service.active)
+
+    async def test_web_origin_must_be_explicitly_allowed(self):
+        allowed = 'http://127.0.0.1:8080'
+        async with serve(self.service.handler, '127.0.0.1', 0, origins=[None, allowed]) as server:
+            uri = f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}'
+            async with connect(uri, origin=allowed) as socket:
+                self.assertEqual((await self.packet(socket))['protocol'], 1)
+            with self.assertRaises(InvalidStatus) as failure:
+                async with connect(uri, origin='https://unrelated.example'):
+                    pass
+            self.assertEqual(failure.exception.response.status_code, 403)
+
+
+class OriginTests(unittest.TestCase):
+    def test_only_exact_http_loopback_origins_are_accepted(self):
+        import argparse
+        for value in ('http://127.0.0.1:8080', 'http://localhost:8080'):
+            self.assertEqual(local_web_origin(value), value)
+        for value in ('https://example.com:8080', 'http://0.0.0.0:8080',
+                      'http://localhost:8080/path', 'http://localhost:8080?x=1',
+                      'http://user@localhost:8080', 'http://localhost', 'null'):
+            with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
+                local_web_origin(value)
 
 
 if __name__ == "__main__":

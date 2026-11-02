@@ -4,6 +4,7 @@ import 'package:gestureplay/game/runner_controller.dart';
 import 'package:gestureplay/game/runner_model.dart';
 import 'package:gestureplay/services/hand_bridge.dart';
 import 'package:gestureplay/services/local_scores.dart';
+import 'package:gestureplay/services/score_storage_io.dart';
 
 Map<String, dynamic> packet(
   int seq, {
@@ -91,7 +92,7 @@ void main() {
       addTearDown(hand.dispose);
       final controller = RunnerController(
         hand,
-        LocalScores(File('${dir.path}/scores.json')),
+        LocalScores(FileScoreStorage(File('${dir.path}/scores.json'))),
       );
       addTearDown(controller.dispose);
       controller.prepare(ControlMode.hand);
@@ -127,7 +128,7 @@ void main() {
       addTearDown(hand.dispose);
       final controller = RunnerController(
         hand,
-        LocalScores(File('${dir.path}/scores.json')),
+        LocalScores(FileScoreStorage(File('${dir.path}/scores.json'))),
       );
       addTearDown(controller.dispose);
       controller.prepare(ControlMode.keyboard);
@@ -153,7 +154,9 @@ void main() {
     () async {
       final dir = await Directory.systemTemp.createTemp('gestureplay_scores_');
       addTearDown(() => dir.delete(recursive: true));
-      final scores = LocalScores(File('${dir.path}/scores.json'));
+      final scores = LocalScores(
+        FileScoreStorage(File('${dir.path}/scores.json')),
+      );
       const result = RunnerResult(
         id: 'one',
         difficulty: Difficulty.normal,
@@ -170,7 +173,7 @@ void main() {
       expect(scores.records.length, 1);
       expect(scores.best(Difficulty.normal, ControlMode.hand), 40);
       expect(scores.best(Difficulty.normal, ControlMode.keyboard), 0);
-      final loaded = LocalScores(scores.file);
+      final loaded = LocalScores(scores.storage);
       await loaded.load();
       expect(loaded.records.length, 1);
     },

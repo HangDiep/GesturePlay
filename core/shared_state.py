@@ -22,6 +22,7 @@ class HandResult:
     palm_y: float | None = None
     pinch_ratio: float | None = None
     pinch_points: tuple[tuple[float, float], tuple[float, float]] | None = None
+    fist: bool = False
 
     @property
     def has_hand(self) -> bool:

@@ -8,3 +8,4 @@ client/data/*.json
 client/data/*.tmp
 flutter_app/data/*.json
 flutter_app/data/*.tmp
+(Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& d:\GesturePlay\.venv\Scripts\Activate.ps1)

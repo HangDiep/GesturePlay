@@ -23,6 +23,7 @@ class GestureInput:
     calibration_stage: str = "none"
     calibration_message: str = "Chụm chưa nhận? Ghi lại hai tư thế bên phải."
     last_jump_ns: int | None = None
+    fist: bool = False
 
 
 class GestureController:
@@ -46,6 +47,9 @@ class GestureController:
         self._armed = False
         self._recent = deque(maxlen=12)
         self._last_jump_ns = None
+        self._fist = False
+        self._fist_since = None
+        self._fist_release_since = None
 
     def reset_calibration(self):
         self.press_threshold = type(self).press_threshold
@@ -106,7 +110,7 @@ class GestureController:
                             release_threshold=self.release_threshold,
                             calibration_stage=self.calibration_stage,
                             calibration_message=self.calibration_message,
-                            last_jump_ns=self._last_jump_ns)
+                            last_jump_ns=self._last_jump_ns, fist=self._fist)
 
     def update(self, result: HandResult | None, now_ns: int, available=True) -> GestureInput:
         reason = None
@@ -121,6 +125,8 @@ class GestureController:
               or not math.isfinite(result.palm_y)):
             reason = "Hướng lòng bàn tay rõ hơn về camera"
         if reason is not None:
+            self._fist = False
+            self._fist_since = self._fist_release_since = None
             self._stable_since = None
             self._pinched = False
             self._armed = False
@@ -132,6 +138,18 @@ class GestureController:
         jump = False
         if result.timestamp_ms > self._last_timestamp:
             self._last_timestamp = result.timestamp_ms
+            if result.fist:
+                self._fist_release_since = None
+                if self._fist_since is None:
+                    self._fist_since = now_ns
+                if now_ns - self._fist_since >= 120_000_000:
+                    self._fist = True
+            else:
+                self._fist_since = None
+                if self._fist_release_since is None:
+                    self._fist_release_since = now_ns
+                if now_ns - self._fist_release_since >= 80_000_000:
+                    self._fist = False
             self._recent.append((result.captured_at_ns, result.pinch_ratio))
             if self._stable_since is None:
                 self._stable_since = now_ns
@@ -139,7 +157,7 @@ class GestureController:
                 self._pinched = False
                 self._armed = True
             elif result.pinch_ratio <= self.press_threshold:
-                jump = self._armed and not self._pinched
+                jump = self._armed and not self._pinched and not result.fist
                 self._pinched = True
                 self._armed = False
                 if jump:

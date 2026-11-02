@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../game/runner_controller.dart';
@@ -84,7 +85,7 @@ class _GesturePlayAppState extends State<GesturePlayApp>
       if (scene == GameScene.playing) {
         controller.pause();
       } else if (scene == GameScene.menu) {
-        unawaited(SystemNavigator.pop());
+        if (!kIsWeb) unawaited(SystemNavigator.pop());
       } else {
         controller.menu();
       }
@@ -332,12 +333,20 @@ class _GesturePlayAppState extends State<GesturePlayApp>
     _button(
       80,
       560,
-      296,
+      kIsWeb ? 468 : 296,
       44,
       'Luyện bằng bàn phím',
       () => controller.prepare(ControlMode.keyboard),
     ),
-    _button(390, 560, 158, 44, 'Thoát', () => unawaited(SystemNavigator.pop())),
+    if (!kIsWeb)
+      _button(
+        390,
+        560,
+        158,
+        44,
+        'Thoát',
+        () => unawaited(SystemNavigator.pop()),
+      ),
     if (scores.error != null)
       _text(80, 615, scores.error!, size: 12, color: gold, width: 470),
     _panel(661, 128, 408, 178),
@@ -746,7 +755,7 @@ class _GesturePlayAppState extends State<GesturePlayApp>
 
   String _hint() => switch (controller.scene) {
     GameScene.menu =>
-      'Enter  Chuẩn bị ${controller.control == ControlMode.hand ? 'bằng tay' : 'bàn phím'}     Esc  Thoát',
+      'Enter  Chuẩn bị ${controller.control == ControlMode.hand ? 'bằng tay' : 'bàn phím'}     ${kIsWeb ? 'Đóng tab để rời game' : 'Esc  Thoát'}',
     GameScene.preparing =>
       controller.control == ControlMode.hand
           ? 'F1  Ghi tay mở     F2  Ghi tay chụm     Enter  Bắt đầu     Esc  Về menu'

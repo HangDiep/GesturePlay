@@ -19,6 +19,21 @@ os.environ.setdefault("MPLCONFIGDIR", str(PROJECT_DIR / ".cache" / "matplotlib")
 LOGGER = logging.getLogger(__name__)
 
 
+def local_web_origin(value):
+    """Only explicitly selected loopback web pages may control the camera."""
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(value)
+        if (parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', 'localhost'}
+                and parsed.port is not None and 0 < parsed.port < 65536
+                and parsed.path == '' and not parsed.query and not parsed.fragment
+                and parsed.username is None and parsed.password is None):
+            return value
+    except ValueError:
+        pass
+    raise argparse.ArgumentTypeError('Origin phải là http://127.0.0.1:PORT hoặc http://localhost:PORT.')
+
+
 def finite(value):
     return value if isinstance(value, (int, float)) and math.isfinite(value) else None
 
@@ -144,6 +159,8 @@ class HandServer:
                         "palm_x": finite(hand.palm_x) if hand else None,
                         "palm_y": finite(hand.palm_y) if hand else None,
                         "pinch_points": hand.pinch_points if hand and gesture.valid else None,
+                        "fist": gesture.fist,
+                        "fist_pending": bool(hand and gesture.valid and hand.fist and not gesture.fist),
                         "age_ms": max(0, (now_ns - hand.captured_at_ns) / 1_000_000) if hand else None,
                         "camera_phase": state.camera.phase, "tracker_phase": state.tracker.phase,
                         "camera_message": state.camera.message, "tracker_message": state.tracker.message,
@@ -177,9 +194,9 @@ class HandServer:
         ok, encoded = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 65])
         return encoded.tobytes() if ok else None
 
-    async def run(self, port=8765):
+    async def run(self, port=8765, origins=()):
         from websockets.asyncio.server import serve
-        async with serve(self.handler, "127.0.0.1", port, origins=[None],
+        async with serve(self.handler, "127.0.0.1", port, origins=[None, *origins],
                          max_size=4096, max_queue=4, write_limit=16384):
             LOGGER.info("HAND_SERVICE_READY ws://127.0.0.1:%s", port)
             while not self.shutdown_event.is_set():
@@ -199,6 +216,8 @@ def main(argv=None):
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--backend", choices=("dshow", "msmf", "auto"), default="dshow")
     parser.add_argument("--idle-timeout", type=float, default=30)
+    parser.add_argument("--origin", action="append", type=local_web_origin, default=[],
+                        help="Origin web local được cho phép (có thể khai báo nhiều lần).")
     args = parser.parse_args(argv)
     if not 0 < args.port < 65536 or not math.isfinite(args.idle_timeout) or args.idle_timeout < 0:
         parser.error("Port hoặc thời gian chờ không hợp lệ.")
@@ -206,7 +225,7 @@ def main(argv=None):
     service = HandServer(replace(AppConfig(), camera_index=args.camera, camera_backend=args.backend),
                          idle_timeout=args.idle_timeout)
     try:
-        return 0 if asyncio.run(service.run(args.port)) else 1
+        return 0 if asyncio.run(service.run(args.port, args.origin)) else 1
     except KeyboardInterrupt:
         service.runtime.shutdown()
         return 0

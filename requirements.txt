@@ -1,2 +1,3 @@
 # Python chi nhan dien tay; ung dung Flutter dung flutter_app/pubspec.yaml.
 -r requirements-hand-lock.txt
+ (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& d:\GesturePlay\.venv\Scripts\Activate.ps1)

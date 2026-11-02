@@ -1,5 +1,5 @@
 name: gestureplay
-description: Game 2D Flutter va Flame, Python chi nhan dien ban tay.
+description: DEAD SIGNAL 2D exploration game in Flutter with local hand recognition.
 publish_to: none
 version: 1.0.0+1
 environment:
@@ -8,9 +8,14 @@ dependencies:
   flutter:
     sdk: flutter
   flame: 1.38.2
+  web: 1.1.1
+  audioplayers: ^6.8.1
+  shared_preferences: ^2.5.6
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
 flutter:
   uses-material-design: true
+  assets:
+    - assets/audio/
