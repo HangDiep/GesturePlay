@@ -72,6 +72,10 @@ class _BenchmarkState extends State<_Benchmark>
     while (model.enemies.where((e) => e.alive).length < 9) {
       final e = model.spawn(CreatureKind.values[model.enemies.length % 4]);
       e.spawnFor = 0;
+      if (const bool.fromEnvironment('TOWN_BENCHMARK_PHASE_TWO') &&
+          e.kind == CreatureKind.boss) {
+        model.hit(e, 450);
+      }
     }
     model.update(dt);
     if (measuring) frames++;
@@ -107,12 +111,16 @@ class _BenchmarkState extends State<_Benchmark>
         .95,
       ),
       'live_enemies': model.enemies.where((e) => e.alive).length,
+      'phase_two_bosses': model.enemies
+          .where((e) => e.alive && e.enraged)
+          .length,
+      'ground_zones': model.bossRifts.length,
       'webcam': false,
       'logical_view':
           '${logicalSize.width.toInt()}x${logicalSize.height.toInt()}',
       'device_pixel_ratio': pixelRatio,
       'notes':
-          'Native profile run with 9 AI enemies, gun effects, rain, fog, lanterns and camera movement. Excludes webcam recognition and browser overhead.',
+          'Native profile run with 9 AI enemies including ranged magic, gun effects, rain, fog, lanterns and camera movement. Excludes webcam recognition and browser overhead.',
     };
     const out = String.fromEnvironment(
       'TOWN_BENCHMARK_OUT',

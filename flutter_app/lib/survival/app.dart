@@ -13,6 +13,7 @@ import '../exploration/world.dart';
 import '../services/hand_bridge.dart';
 import 'art.dart';
 import 'hand_input.dart';
+import 'hand_preview.dart';
 import 'painter.dart';
 import 'rules.dart';
 
@@ -53,16 +54,20 @@ class _SurvivalAppState extends State<SurvivalApp>
   ExplorationModel? _model;
   Duration _last = Duration.zero;
   bool _handMode = false,
+      _twoHandMode = false,
       _mouseFire = false,
       _touchFire = false,
       _music = false,
       _reducedEffects = false,
       _mapOpen = false,
+      _bagOpen = false,
+      _awaitingTwoHands = false,
+      _awaitingResume = false,
       _mapWasPlaying = false;
   Offset _touchMove = Offset.zero;
   Offset? _mouseAt;
   String _error = '', _hint = '';
-  int _soundSerial = 0, _howlSerial = 0, _seed = 42;
+  int _soundSerial = 0, _howlSerial = 0, _magicSerial = 0, _seed = 42;
   double _clock = 0;
 
   @override
@@ -114,6 +119,7 @@ class _SurvivalAppState extends State<SurvivalApp>
     if (!mounted) return;
     hand.cameraIndex = settings.cameraIndex;
     hand.backend = settings.backend;
+    _handInput.swapHands = settings.swapHands;
     setState(() {});
   }
 
@@ -133,12 +139,48 @@ class _SurvivalAppState extends State<SurvivalApp>
     final dt = ((time - _last).inMicroseconds / 1000000).clamp(0.0, .1);
     _last = time;
     _clock += dt;
-    final m = _model;
+    var m = _model;
+    if (_awaitingTwoHands && hand.twoHandsOpen) {
+      _resume();
+      m = _model;
+    }
+    final wheel = _handInput.wheelOpen || _handInput.waitingRelease;
+    if (_twoHandMode &&
+        _handMode &&
+        !_awaitingTwoHands &&
+        !wheel &&
+        (m == null || !m.active) &&
+        _navigator.currentState?.canPop() != true) {
+      final useRightFist =
+          m == null || m.phase == FieldPhase.paused && !_bagOpen && !_mapOpen;
+      if (useRightFist
+          ? _handInput.startConfirm(hand, dt)
+          : _handInput.menuConfirm(hand, dt)) {
+        if (m == null || m.finished) {
+          _start(retry: m != null);
+        } else if (_bagOpen) {
+          _closeBag();
+        } else if (_mapOpen) {
+          _closeMap();
+        } else {
+          _resume();
+        }
+        m = _model;
+      }
+    }
     if (m != null) {
       final wasActive = m.active;
       if (_handMode &&
           (m.active || _handInput.wheelOpen || _handInput.waitingRelease)) {
         _handInput.apply(m, hand, dt);
+        switch (_handInput.takeUiAction()) {
+          case 9:
+            _openBag();
+          case 10:
+            _openMap();
+          case 11:
+            _pause();
+        }
       } else if (m.active && !_handMode) {
         bool down(LogicalKeyboardKey key) => _keys.contains(key);
         m.movement =
@@ -169,7 +211,16 @@ class _SurvivalAppState extends State<SurvivalApp>
         _updateMouseAim(m);
       }
       m.update(dt);
-      if (wasActive && !m.active) _clearInput();
+      if (wasActive && !m.active) {
+        _clearInput();
+        if (_twoHandMode &&
+            m.phase == FieldPhase.paused &&
+            !_awaitingTwoHands &&
+            !_handInput.wheelOpen &&
+            !_handInput.waitingRelease) {
+          _handInput.blockHeldFist(hand);
+        }
+      }
       if (m.soundSerial != _soundSerial) {
         _soundSerial = m.soundSerial;
         audio.play(m.sound);
@@ -177,6 +228,10 @@ class _SurvivalAppState extends State<SurvivalApp>
       if (m.howlSerial != _howlSerial) {
         _howlSerial = m.howlSerial;
         if (m.active) audio.howl(m.howlGain);
+      }
+      if (m.magicSerial != _magicSerial) {
+        _magicSerial = m.magicSerial;
+        if (m.active) audio.magic(m.magicSound);
       }
     } else {
       for (final e in _preview.enemies) {
@@ -212,11 +267,11 @@ class _SurvivalAppState extends State<SurvivalApp>
     if (_navigator.currentState?.canPop() == true) return false;
     if (event is! KeyDownEvent) return false;
     if (_handMode && key == LogicalKeyboardKey.f1) {
-      hand.calibrateOpen();
+      hand.calibrateOpen(both: _twoHandMode);
       return true;
     }
     if (_handMode && key == LogicalKeyboardKey.f2) {
-      hand.calibrateClosed();
+      hand.calibrateClosed(both: _twoHandMode);
       return true;
     }
     if (_handMode && key == LogicalKeyboardKey.keyC) {
@@ -225,6 +280,18 @@ class _SurvivalAppState extends State<SurvivalApp>
     }
     final m = _model;
     if (m == null) return false;
+    if (_bagOpen) {
+      if (key == LogicalKeyboardKey.keyI ||
+          key == LogicalKeyboardKey.escape ||
+          key == LogicalKeyboardKey.keyP) {
+        _closeBag();
+      }
+      return true;
+    }
+    if (key == LogicalKeyboardKey.keyI && m.active && !_mapOpen) {
+      _openBag();
+      return true;
+    }
     if (key == LogicalKeyboardKey.keyM ||
         _mapOpen &&
             (key == LogicalKeyboardKey.escape ||
@@ -249,8 +316,19 @@ class _SurvivalAppState extends State<SurvivalApp>
     if (!m.active) return false;
     _keys.add(key);
     if (key == LogicalKeyboardKey.keyR) m.reload();
-    if (key == LogicalKeyboardKey.keyQ) m.flash();
-    if (key == LogicalKeyboardKey.keyE) m.trap();
+    if (key == LogicalKeyboardKey.keyH) m.useMedkit();
+    if (key == LogicalKeyboardKey.keyE) m.interact();
+    if (key == LogicalKeyboardKey.keyV) m.cycleWeapon();
+    for (var i = 0; i < 3; i++) {
+      if (key ==
+          [
+            LogicalKeyboardKey.digit1,
+            LogicalKeyboardKey.digit2,
+            LogicalKeyboardKey.digit3,
+          ][i]) {
+        m.switchWeapon(GunKind.values[i]);
+      }
+    }
     if (key == LogicalKeyboardKey.space) m.roll();
     if (key == LogicalKeyboardKey.keyG) _toggleHide();
     if (key == LogicalKeyboardKey.keyX) {
@@ -279,11 +357,15 @@ class _SurvivalAppState extends State<SurvivalApp>
     _model?.movement = Offset.zero;
   }
 
-  void _setHand(bool value) {
+  void _setHand(bool value, {bool twoHands = false}) {
     _clearInput();
     _handInput.reset();
     setState(() {
       _handMode = value;
+      _twoHandMode = value && twoHands;
+      _handInput.twoHands = _twoHandMode;
+      _handInput.swapHands = settings.swapHands;
+      _awaitingTwoHands = _awaitingResume = false;
       _hint = '';
     });
     if (value) {
@@ -295,8 +377,15 @@ class _SurvivalAppState extends State<SurvivalApp>
   }
 
   void _start({bool retry = false}) {
-    if (_handMode && (!hand.ready || !hand.released)) {
-      setState(() => _hint = 'Đưa bàn tay mở rõ vào webcam trước khi bắt đầu.');
+    if (_handMode &&
+        (_twoHandMode
+            ? !hand.handReady('right')
+            : !hand.ready || !hand.released)) {
+      setState(
+        () => _hint = _twoHandMode
+            ? 'Đưa tay phải rõ vào webcam, nắm khoảng nửa giây để bắt đầu.'
+            : 'Đưa bàn tay mở rõ vào webcam trước khi bắt đầu.',
+      );
       return;
     }
     if (!retry) _seed = DateTime.now().millisecondsSinceEpoch;
@@ -306,30 +395,53 @@ class _SurvivalAppState extends State<SurvivalApp>
     setState(() {
       _model = ExplorationModel(FieldMap.town, seed: _seed, survival: true)
         ..start();
+      _awaitingTwoHands = _twoHandMode && !hand.twoHandsOpen;
+      _awaitingResume = false;
+      if (_awaitingTwoHands) _model!.pause();
       _soundSerial = 0;
       _howlSerial = 0;
+      _magicSerial = 0;
       _mapOpen = false;
+      _bagOpen = false;
       _hint = '';
     });
   }
 
   void _pause() {
+    _awaitingTwoHands = _awaitingResume = false;
     _model?.pause();
     _clearInput();
     _handInput.reset();
+    if (_twoHandMode) _handInput.blockHeldFist(hand);
     unawaited(audio.silenceTension());
     setState(() {});
   }
 
   void _resume() {
-    if (_handMode && (!hand.ready || !hand.released)) {
-      setState(() => _hint = 'Mở tay rõ trong webcam rồi bấm Tiếp tục.');
+    if (_model?.phase != FieldPhase.paused) return;
+    if (_handMode &&
+        (_twoHandMode ? !hand.twoHandsOpen : !hand.ready || !hand.released)) {
+      if (_twoHandMode && hand.handReady('right')) {
+        _clearInput();
+        _handInput.reset();
+        setState(() {
+          _awaitingTwoHands = _awaitingResume = true;
+          _hint = '';
+        });
+        return;
+      }
+      setState(
+        () => _hint = _twoHandMode
+            ? 'Đưa tay phải rõ vào webcam, nắm khoảng 0,5 giây để tiếp tục.'
+            : 'Mở tay rõ trong webcam rồi bấm Tiếp tục.',
+      );
       return;
     }
     _clearInput();
     _handInput.reset();
     hand.discardJumps();
     _model?.resume();
+    _awaitingTwoHands = _awaitingResume = false;
     setState(() => _hint = '');
   }
 
@@ -340,7 +452,7 @@ class _SurvivalAppState extends State<SurvivalApp>
   }
 
   void _openMap() {
-    if (_model == null || _model!.finished) return;
+    if (_model == null || _model!.finished || _awaitingTwoHands) return;
     _mapWasPlaying = _model!.active;
     if (_mapWasPlaying) _pause();
     setState(() => _mapOpen = true);
@@ -349,6 +461,22 @@ class _SurvivalAppState extends State<SurvivalApp>
   void _closeMap() {
     setState(() => _mapOpen = false);
     if (_mapWasPlaying) _resume();
+  }
+
+  void _openBag() {
+    if (_model?.active != true || _mapOpen) return;
+    _pause();
+    setState(() => _bagOpen = true);
+  }
+
+  void _closeBag() {
+    setState(() => _bagOpen = false);
+    _resume();
+  }
+
+  void _bagAction(VoidCallback action) {
+    _closeBag();
+    if (_model?.active == true) setState(action);
   }
 
   Future<void> _home() async {
@@ -376,6 +504,7 @@ class _SurvivalAppState extends State<SurvivalApp>
     _handInput.reset();
     setState(() {
       _model = null;
+      _awaitingTwoHands = _awaitingResume = false;
       _hint = '';
     });
   }
@@ -567,7 +696,11 @@ class _SurvivalAppState extends State<SurvivalApp>
                   Wrap(
                     spacing: 12,
                     runSpacing: 10,
-                    children: [_controlChoice(false), _controlChoice(true)],
+                    children: [
+                      _controlChoice(false),
+                      _controlChoice(true),
+                      _controlChoice(true, twoHands: true),
+                    ],
                   ),
                   if (_handMode)
                     Padding(
@@ -653,18 +786,22 @@ class _SurvivalAppState extends State<SurvivalApp>
     },
   );
 
-  Widget _controlChoice(bool useHand) => ChoiceChip(
-    selected: _handMode == useHand,
+  Widget _controlChoice(bool useHand, {bool twoHands = false}) => ChoiceChip(
+    selected: _handMode == useHand && (!useHand || twoHands == _twoHandMode),
     avatar: Icon(
       useHand ? Icons.back_hand_outlined : Icons.keyboard_alt_outlined,
       size: 17,
     ),
-    label: Text(useHand ? 'Bàn tay / Webcam' : 'Bàn phím / Cảm ứng'),
-    onSelected: (_) => _setHand(useHand),
+    label: Text(
+      useHand
+          ? (twoHands ? 'Hai tay / Webcam' : 'Bàn tay / Webcam')
+          : 'Bàn phím / Cảm ứng',
+    ),
+    onSelected: (_) => _setHand(useHand, twoHands: twoHands),
     selectedColor: const Color(0xff35433c),
     backgroundColor: const Color(0xb3101d23),
     side: BorderSide(
-      color: _handMode == useHand
+      color: _handMode == useHand && (!useHand || _twoHandMode == twoHands)
           ? _gold.withValues(alpha: .6)
           : const Color(0xff34454b),
     ),
@@ -931,6 +1068,14 @@ class _SurvivalAppState extends State<SurvivalApp>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      m.gun.name,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 9,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -941,7 +1086,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                           '${m.ammo}'.padLeft(2, '0'),
                           style: TextStyle(
                             color: _cream,
-                            fontSize: compact ? 25 : 34,
+                            fontSize: compact ? (tiny ? 20 : 25) : 34,
                             fontWeight: FontWeight.w300,
                           ),
                         ),
@@ -955,14 +1100,15 @@ class _SurvivalAppState extends State<SurvivalApp>
                       ],
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      'LÕI ${m.cores}/3  ·  HẠ ${m.kills}',
-                      style: const TextStyle(
-                        color: _muted,
-                        fontSize: 9,
-                        letterSpacing: 1.2,
+                    if (!tiny)
+                      Text(
+                        'LÕI ${m.cores}/3  ·  HẠ ${m.kills}',
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -980,7 +1126,7 @@ class _SurvivalAppState extends State<SurvivalApp>
           ),
           if (m.active && (m.nearbyHiding != null || m.hidden))
             Positioned(
-              bottom: compact ? (tiny ? 136 : 282) : 100,
+              bottom: compact ? (tiny ? 136 : 358) : 100,
               left: size.maxWidth / 2 - 115,
               child: SizedBox(
                 width: 230,
@@ -1009,29 +1155,29 @@ class _SurvivalAppState extends State<SurvivalApp>
               mainAxisSize: MainAxisSize.min,
               children: [
                 _skill(
-                  'Q',
-                  Icons.flash_on_outlined,
-                  m.flashes,
-                  m.flashCooldown,
-                  () => m.flash(),
-                  compact,
-                ),
-                const SizedBox(width: 8),
-                _skill(
-                  'E',
-                  Icons.bolt,
-                  m.traps,
-                  m.trapCooldown,
-                  () => m.trap(),
-                  compact,
-                ),
-                const SizedBox(width: 8),
-                _skill(
                   'R',
                   Icons.refresh,
                   null,
                   m.reloadFor,
                   m.reload,
+                  compact,
+                ),
+                const SizedBox(width: 8),
+                _skill(
+                  'H',
+                  Icons.medical_services_outlined,
+                  m.medkits,
+                  m.healFor,
+                  () => m.useMedkit(),
+                  compact,
+                ),
+                const SizedBox(width: 8),
+                _skill(
+                  'I',
+                  Icons.backpack_outlined,
+                  null,
+                  0,
+                  _openBag,
                   compact,
                 ),
               ],
@@ -1043,7 +1189,7 @@ class _SurvivalAppState extends State<SurvivalApp>
               right: 270,
               bottom: 30,
               child: Text(
-                'WASD  Đi  •  CHUỘT  Bắn  •  X  Ngồi  •  Z  Nằm\nSPACE  Lướt  •  SHIFT  Chạy  •  G  Ẩn  •  M  Bản đồ  •  ESC  Dừng',
+                'WASD Đi · CHUỘT Bắn · 1/2/3 Đổi súng · X/Z Tư thế\nH Băng bó · E Tương tác · I Túi đồ · SPACE Né · M Bản đồ',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: _muted.withValues(alpha: .8),
@@ -1083,16 +1229,74 @@ class _SurvivalAppState extends State<SurvivalApp>
             ),
           Positioned(
             left: compact ? (tiny ? 154 : 14) : 26,
-            bottom: compact ? (tiny ? 18 : 228) : 126,
+            bottom: compact ? (tiny ? 18 : 258) : 126,
             child: SizedBox(
               width: compact && tiny ? 224 : 230,
               child: _stanceButtons(m),
             ),
           ),
+          Positioned(
+            left: compact && tiny ? 154 : (compact ? 14 : 26),
+            bottom: compact ? (tiny ? 72 : 308) : 176,
+            child: SizedBox(
+              width: compact && tiny ? 224 : 230,
+              child: _gunSlots(m),
+            ),
+          ),
+          if (m.active && m.interactionLabel != null)
+            Positioned(
+              bottom: compact ? (tiny ? 136 : 358) : 100,
+              left: size.maxWidth / 2 - 140,
+              child: SizedBox(
+                width: 280,
+                child: _panel(
+                  TextButton(
+                    key: const ValueKey('interact-button'),
+                    onPressed: () => setState(() => m.interact()),
+                    child: Text(
+                      m.interactionLabel!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: _gold, fontSize: 10),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (m.healing)
+            Positioned(
+              bottom: compact ? (tiny ? 92 : 408) : 222,
+              left: size.maxWidth / 2 - 115,
+              child: SizedBox(
+                width: 230,
+                child: _panel(
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      key: const ValueKey('healing-progress'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'BĂNG BÓ · ${m.healFor.toStringAsFixed(1)}s',
+                          style: const TextStyle(color: _teal, fontSize: 11),
+                        ),
+                        const SizedBox(height: 5),
+                        _bar(
+                          1 - m.healFor / ExplorationModel.healDuration,
+                          _teal,
+                          4,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (!_mapOpen &&
+              !_bagOpen &&
               (m.phase == FieldPhase.paused || m.finished && m.dyingFor == 0))
             Positioned.fill(child: _overlay(m)),
           if (_mapOpen) Positioned.fill(child: _mapOverlay(m)),
+          if (_bagOpen) Positioned.fill(child: _inventory(m)),
         ],
       );
     },
@@ -1100,6 +1304,319 @@ class _SurvivalAppState extends State<SurvivalApp>
 
   String _time(int seconds) =>
       '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+
+  Widget _gunSlots(ExplorationModel m) => _panel(
+    Row(
+      children: [
+        for (final kind in GunKind.values)
+          Expanded(
+            child: InkWell(
+              key: ValueKey('gun-slot-${kind.name}'),
+              onTap: m.active && m.owns(kind)
+                  ? () => setState(() => m.switchWeapon(kind))
+                  : null,
+              child: Container(
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: m.weapon == kind
+                      ? const Color(0x445b7865)
+                      : Colors.transparent,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: m.weapon == kind ? _gold : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  '${kind.index + 1} ${const ['LỤC', 'TRƯỜNG', 'SG'][kind.index]}',
+                  style: TextStyle(
+                    color: m.owns(kind) ? _cream : _muted.withValues(alpha: .4),
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _inventory(ExplorationModel m) => ColoredBox(
+    color: const Color(0xf008141b),
+    child: Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 650),
+          child: _panel(
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                key: const ValueKey('inventory-panel'),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'TÚI ĐỒ',
+                          style: TextStyle(
+                            color: _gold,
+                            fontSize: 22,
+                            letterSpacing: 3,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Đóng túi đồ',
+                        onPressed: _closeBag,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const Text(
+                    '3 ô súng · tối đa 3 túi máu · thời gian đang tạm dừng',
+                    style: TextStyle(color: _muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 18),
+                  for (final kind in GunKind.values)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xff172b32),
+                          border: Border.all(
+                            color: m.weapon == kind
+                                ? _gold
+                                : const Color(0xff34444b),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.gps_fixed, color: _gold),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    GunSpec.of(kind).name,
+                                    style: const TextStyle(
+                                      color: _cream,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    m.owns(kind)
+                                        ? '${m.magazineOf(kind)}/${GunSpec.of(kind).magazine} viên · dự trữ ${m.reserveOf(kind)}'
+                                        : 'Chưa nhặt được',
+                                    style: const TextStyle(
+                                      color: _muted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              key: ValueKey('inventory-gun-${kind.name}'),
+                              onPressed: m.owns(kind) && m.weapon != kind
+                                  ? () => _bagAction(() => m.switchWeapon(kind))
+                                  : null,
+                              child: Text(
+                                m.weapon == kind ? 'ĐANG CẦM' : 'TRANG BỊ',
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'TÚI MÁU  ${m.medkits}/${ExplorationModel.medkitCapacity}',
+                          style: const TextStyle(color: _teal),
+                        ),
+                      ),
+                      TextButton(
+                        key: const ValueKey('inventory-heal'),
+                        onPressed: m.medkits > 0 && m.health < 100
+                            ? () => _bagAction(() => m.useMedkit())
+                            : null,
+                        child: const Text('BĂNG BÓ · 2,8s'),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Chìa kho tiếp tế: ${m.keys.contains('armory') ? 'ĐÃ CÓ' : 'CHƯA CÓ / ĐÃ DÙNG'}',
+                    style: const TextStyle(color: _gold, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Băng bó hồi 40 máu. Giữ yên và tìm vật chắn; di chuyển, bắn, đổi súng hoặc trúng đòn sẽ ngắt.\nE để đóng/mở cửa và lấy tiếp tế. Hòm giữ lại đồ chưa mang được.',
+                    style: TextStyle(color: _muted, fontSize: 12, height: 1.6),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _closeBag,
+                      child: const Text('TRỞ LẠI · I / ESC'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _actionWheel(ExplorationModel m) => LayoutBuilder(
+    builder: (context, box) {
+      final order = [
+        0,
+        2,
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        if (_twoHandMode) ...[9, 10, 11],
+      ];
+      final rowHeight = ((box.maxHeight - 170) / (_twoHandMode ? 4 : 3)).clamp(
+        38.0,
+        86.0,
+      );
+      final labels = [
+        'Nạp đạn',
+        'Lướt né',
+        m.hidden ? 'Rời chỗ ẩn' : 'Ẩn nấp',
+        'Đứng',
+        'Ngồi',
+        'Nằm',
+        'Máu ${m.medkits}/3',
+        'Đổi súng',
+        'Tương tác',
+        'Túi đồ',
+        'Bản đồ',
+        'Tạm dừng',
+      ];
+      const icons = [
+        Icons.refresh,
+        Icons.directions_run,
+        Icons.visibility_off_outlined,
+        Icons.accessibility_new,
+        Icons.airline_seat_legroom_normal,
+        Icons.airline_seat_flat,
+        Icons.medical_services_outlined,
+        Icons.swap_horiz,
+        Icons.door_front_door_outlined,
+        Icons.backpack_outlined,
+        Icons.map_outlined,
+        Icons.pause_circle_outline,
+      ];
+      return ColoredBox(
+        color: const Color(0xe508131b),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: _panel(
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'CHỌN THAO TÁC',
+                      style: TextStyle(
+                        color: _gold,
+                        fontSize: 18,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _handInput.waitingRelease
+                          ? (_twoHandMode
+                                ? 'Mở cả hai tay để thực hiện.'
+                                : 'Mở tay ổn định để tiếp tục.')
+                          : _twoHandMode
+                          ? 'Dịch tay ngắm để chọn ô, hạ xuống để đổi hàng.\nChụm/thả tay ngắm để chọn; chụm tay di chuyển để hủy.'
+                          : 'Dịch tay trái/giữa/phải; hạ tay chọn hàng 2 hoặc 3.\nChụm rồi thả để chọn.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: _muted,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    GridView(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 6,
+                        crossAxisSpacing: 6,
+                        mainAxisExtent: rowHeight,
+                      ),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        for (final index in order)
+                          OutlinedButton(
+                            key: ValueKey('wheel-action-$index'),
+                            onPressed: _handInput.waitingRelease
+                                ? null
+                                : () =>
+                                      setState(() => _handInput.select(index)),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.all(4),
+                              side: BorderSide(
+                                color: _handInput.selection == index
+                                    ? _gold
+                                    : _muted.withValues(alpha: .4),
+                              ),
+                              backgroundColor: _handInput.selection == index
+                                  ? const Color(0x405c705d)
+                                  : Colors.transparent,
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(icons[index], size: 18),
+                                const SizedBox(height: 3),
+                                Text(
+                                  labels[index],
+                                  style: const TextStyle(fontSize: 10),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _handInput.select(null)),
+                      child: const Text('Hủy chọn'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 
   Widget _stanceButtons(ExplorationModel m) => _panel(
     Row(
@@ -1231,6 +1748,21 @@ class _SurvivalAppState extends State<SurvivalApp>
                 ),
               ),
             ),
+          if (m.magicThreat)
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Text(
+                m.bossRifts.any((r) => !r.detonated)
+                    ? 'VẾT NỨT · RỜI VÒNG ĐỎ NGAY'
+                    : 'MA LỰC · NÉ NGANG / TÌM VẬT CHẮN',
+                key: const ValueKey('magic-warning'),
+                style: const TextStyle(
+                  color: Color(0xffc6a5ef),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           if (m.hidden) ...[
             const SizedBox(height: 5),
             Text(
@@ -1325,7 +1857,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    '● Bạn  ·  Xanh lam: lõi  ·  Xanh lá: chỗ ẩn  ·  Vàng: đạn  ·  Đỏ: quái',
+                    '● Bạn · Lam: lõi · Lục: chỗ ẩn · Vàng: tiếp tế/súng/chìa · Đỏ: quái\nKhung phòng: phòng trú / kho · Cửa lam: mở · Cửa vàng: đóng',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: _muted, fontSize: 10, height: 1.5),
                   ),
@@ -1365,15 +1897,17 @@ class _SurvivalAppState extends State<SurvivalApp>
     bool compact,
   ) => _panel(
     Tooltip(
-      message: keyName == 'Q'
-          ? 'Đèn chớp — choáng quái'
-          : keyName == 'E'
-          ? 'Đặt bẫy điện'
+      message: keyName == 'H'
+          ? 'Dùng túi máu'
+          : keyName == 'I'
+          ? 'Túi đồ'
           : 'Thay đạn',
       child: InkWell(
+        key: ValueKey('action-$keyName'),
         onTap:
             _model?.active == true &&
                 cooldown == 0 &&
+                (keyName != 'H' || _model!.health < 100) &&
                 (count == null || count > 0)
             ? () => setState(action)
             : null,
@@ -1385,7 +1919,12 @@ class _SurvivalAppState extends State<SurvivalApp>
             children: [
               Icon(
                 icon,
-                color: cooldown > 0 || count == 0 ? _muted : _gold,
+                color:
+                    cooldown > 0 ||
+                        count == 0 ||
+                        keyName == 'H' && _model!.health >= 100
+                    ? _muted
+                    : _gold,
                 size: 20,
               ),
               const SizedBox(height: 5),
@@ -1485,9 +2024,62 @@ class _SurvivalAppState extends State<SurvivalApp>
   }
 
   Widget _overlay(ExplorationModel m) {
+    if (_awaitingTwoHands) {
+      return ColoredBox(
+        color: const Color(0xdc08151c),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: _panel(
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  key: ValueKey(
+                    _awaitingResume
+                        ? 'two-hands-resume-wait'
+                        : 'two-hands-start-wait',
+                  ),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle_outline,
+                      color: _teal,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _awaitingResume ? 'ĐÃ NHẬN TIẾP TỤC' : 'ĐÃ NHẬN BẮT ĐẦU',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: _cream,
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Thả tay phải và mở rõ cả hai bàn tay trước webcam.\nVán sẽ chạy khi hai tay sẵn sàng.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: _muted, height: 1.6),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Thời gian đang dừng · Máu và đạn được giữ nguyên',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: _teal, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     final won = m.phase == FieldPhase.won;
     final paused = m.phase == FieldPhase.paused;
     final wheel = _handInput.wheelOpen || _handInput.waitingRelease;
+    if (wheel) return _actionWheel(m);
     return ColoredBox(
       color: const Color(0xc9050e14),
       child: Center(
@@ -1519,7 +2111,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                     const SizedBox(height: 16),
                     Text(
                       wheel
-                          ? 'CHỌN KỸ NĂNG'
+                          ? 'CHỌN THAO TÁC'
                           : paused
                           ? 'TẠM DỪNG'
                           : won
@@ -1538,9 +2130,11 @@ class _SurvivalAppState extends State<SurvivalApp>
                       wheel
                           ? (_handInput.waitingRelease
                                 ? 'Mở tay ổn định để trở lại ván chơi.'
-                                : 'Hàng trên: đèn / ẩn / bẫy. Hạ tay để chọn đứng / ngồi / nằm. Chụm thả để chọn.')
+                                : 'Hàng trên: nạp đạn / ẩn / lướt né. Hạ tay để chọn đứng / ngồi / nằm. Chụm thả để chọn.')
                           : paused
-                          ? (_handMode && !hand.ready
+                          ? (_twoHandMode
+                                ? 'Nắm tay phải khoảng 0,5 giây để bấm Tiếp tục.\nSau đó thả và mở cả hai tay để chơi tiếp.'
+                                : _handMode && !hand.ready
                                 ? hand.statusMessage
                                 : 'Thị trấn đang chờ bạn trở lại.')
                           : won
@@ -1549,6 +2143,27 @@ class _SurvivalAppState extends State<SurvivalApp>
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: _muted, height: 1.6),
                     ),
+                    if (_twoHandMode && !paused)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: Text(
+                          'Mở hai tay, chụm rồi thả tay ngắm để chơi lại.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: _teal, fontSize: 12),
+                        ),
+                      ),
+                    if (_twoHandMode && paused)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: LinearProgressIndicator(
+                          key: const ValueKey('resume-fist-progress'),
+                          value: _handInput.startFistProgress,
+                          minHeight: 6,
+                          color: _gold,
+                          backgroundColor: const Color(0xff263b42),
+                          semanticsLabel: 'Nắm tay phải để tiếp tục',
+                        ),
+                      ),
                     if (wheel) ...[
                       const SizedBox(height: 22),
                       Row(
@@ -1578,17 +2193,17 @@ class _SurvivalAppState extends State<SurvivalApp>
                                       children: [
                                         Icon(
                                           i == 0
-                                              ? Icons.flash_on
+                                              ? Icons.refresh
                                               : i == 1
-                                              ? Icons.bolt
+                                              ? Icons.directions_run
                                               : Icons.visibility_off_outlined,
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
                                           i == 0
-                                              ? 'Đèn · ${m.flashes}'
+                                              ? 'Nạp đạn'
                                               : i == 1
-                                              ? 'Bẫy · ${m.traps}'
+                                              ? 'Lướt né'
                                               : m.hidden
                                               ? 'Rời chỗ ẩn'
                                               : 'Ẩn nấp',
@@ -1633,6 +2248,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                           children: [
                             _controlChoice(false),
                             _controlChoice(true),
+                            _controlChoice(true, twoHands: true),
                           ],
                         ),
                       ],
@@ -1678,7 +2294,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                         const Padding(
                           padding: EdgeInsets.only(top: 10),
                           child: Text(
-                            'Né vòng báo đòn. Dùng đèn chớp hoặc bẫy khi bị áp sát.',
+                            'Quái bắn ma lực từ xa. Né ngang, nấp vật chắn; bắn quái gây nhiễu khi nó tụ phép để ngắt đòn. Boss hở giáp sau khi tung phép.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: _muted,
@@ -1726,14 +2342,23 @@ class _SurvivalAppState extends State<SurvivalApp>
                 _eyebrow('BÀN PHÍM VÀ CHUỘT'),
                 const SizedBox(height: 8),
                 const Text(
-                  'WASD / mũi tên: đi lại\nChuột: ngắm · Giữ chuột trái hoặc F: bắn\nX: ngồi xổm / đứng · Z: nằm / đứng\nShift: chạy khi đứng · Space: lướt né\nKhi nằm: Space đứng dậy, bấm tiếp sau đó để lướt\nR: thay đạn · Q: đèn chớp · E: bẫy điện\nG: ẩn / rời chỗ ẩn · M: xem toàn thị trấn\nEsc / P: tạm dừng',
+                  'WASD / mũi tên: đi lại\nChuột: ngắm · Giữ chuột trái hoặc F: bắn\n1/2/3: súng lục / súng trường / shotgun · V: đổi súng\nR: thay đạn · Chỉ súng gây sát thương\nH: băng bó 2,8 giây (+40 máu), túi chứa tối đa 3 túi máu\nI: túi đồ · E: mở/đóng cửa, lấy tiếp tế\nX: ngồi xổm / đứng · Z: nằm / đứng\nShift: chạy khi đứng · Space: lướt né\nKhi nằm: Space đứng dậy, bấm tiếp sau đó để lướt\nG: ẩn / rời chỗ ẩn · M: xem toàn thị trấn\nEsc / P: tạm dừng',
                   style: TextStyle(color: _muted, height: 1.8),
                 ),
                 const SizedBox(height: 20),
+                if (_twoHandMode) ...[
+                  _eyebrow('HAI TAY · CỬ CHỈ TRỰC TIẾP'),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Trang đầu và màn Tạm dừng: nắm tay phải khoảng 0,5 giây để bấm Bắt đầu/Tiếp tục. Sau khi xác nhận, thả tay phải và mở cả hai tay để ván chạy.\nTay di chuyển (mặc định trái): mở/dịch để đi; hất lên để né.\nNắm ngắn rồi mở: đổi Đứng → Ngồi → Nằm.\nChụm/thả ngắn: mở cửa/lấy đồ khi ở gần, hoặc ẩn/rời ẩn.\nChụm giữ ≥0,8 giây rồi thả: băng bó.\nTay ngắm (mặc định phải): dịch để ngắm, chụm giữ để bắn.\nNắm ngắn/thả: nạp đạn; nắm ≥0,8 giây/thả: đổi súng.\nNắm tay di chuyển ≥0,8 giây: mở bảng 12 thao tác, chọn hoàn toàn bằng tay ngắm.\nNắm cả hai tay ≥0,8 giây: tạm dừng. Thả ra rồi nắm tay phải lần mới để tiếp tục.\nỞ màn kết quả: mở hai tay, chụm tay ngắm ≥0,12 giây rồi thả để chơi lại. Mất một tay tự tạm dừng.\nCó thể đổi vai hai tay trong Cài đặt.',
+                    style: TextStyle(color: _muted, height: 1.7),
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 _eyebrow('MỘT BÀN TAY'),
                 const SizedBox(height: 8),
                 const Text(
-                  'Mở tay và dịch lòng bàn tay: di chuyển\nChụm ngón cái với ngón trỏ: ngắm và bắn ở mọi tư thế\nNâng nhanh bàn tay đang mở: lướt; về tâm để dùng lại\nNắm ngắn rồi mở: thay đạn\nNắm 0,8 giây: mở vòng kỹ năng\nHàng trên: trái đèn, giữa ẩn, phải bẫy\nHạ tay xuống hàng tư thế: trái đứng, giữa ngồi, phải nằm\nChụm rồi thả để chọn, mở tay để trở lại\nF1: hiệu chỉnh tay mở · F2: hiệu chỉnh chụm\nC: đặt lại tâm di chuyển\nMất tay: ván tự tạm dừng; bấm Tiếp tục để chơi lại.',
+                  'Mở tay và dịch lòng bàn tay: di chuyển\nChụm ngón cái với ngón trỏ: ngắm và bắn ở mọi tư thế\nNâng nhanh bàn tay đang mở: lướt; về tâm để dùng lại\nNắm ngắn rồi mở: thay đạn\nNắm 0,8 giây: mở vòng thao tác\nHàng trên: trái nạp đạn, giữa ẩn, phải lướt né\nHàng giữa: trái đứng, giữa ngồi, phải nằm\nHàng dưới: trái băng bó, giữa đổi súng, phải tương tác\nChụm rồi thả để chọn, mở tay để trở lại\nF1: hiệu chỉnh tay mở · F2: hiệu chỉnh chụm\nC: đặt lại tâm di chuyển\nMất tay: ván tự tạm dừng; bấm Tiếp tục để chơi lại.',
                   style: TextStyle(color: _muted, height: 1.8),
                 ),
                 const SizedBox(height: 20),
@@ -1747,7 +2372,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                 _eyebrow('ĐỌC ĐÒN TẤN CÔNG'),
                 const SizedBox(height: 8),
                 const Text(
-                  'Rời vòng đỏ trước khi quái đánh. Boss có giáp; bắn lúc vòng vàng sáng để gây đủ sát thương. Quái có thể giết bạn khi máu về 0.',
+                  'Rời vòng đỏ trước khi quái đánh. Boss có giáp; bắn lúc vòng vàng sáng để gây đủ sát thương. Dưới nửa máu, boss chuyển giai đoạn hai: cầu ma lực nhanh hơn và hai vùng nổ báo trước 1,4 giây.\nPhòng trú có tiếp tế và cửa đóng để cắt truy đuổi; quái có thể phá cửa. Tìm chìa ở phố cổ để mở kho. Băng bó bị ngắt khi di chuyển, bắn hoặc trúng đòn, nhưng chưa mất túi máu. Quái có thể giết bạn khi máu về 0.',
                   style: TextStyle(color: _muted, height: 1.7),
                 ),
               ],
@@ -1770,48 +2395,63 @@ class _SurvivalAppState extends State<SurvivalApp>
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
           title: const Text('Cài đặt'),
-          content: SizedBox(
-            width: 350,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Tắt âm thanh'),
-                  value: settings.muted,
-                  onChanged: (v) {
-                    update(() => settings.muted = v);
-                    unawaited(audio.sync(playing: _model?.active == true));
-                  },
-                ),
-                const Text('Âm nền', style: TextStyle(color: _muted)),
-                Slider(
-                  value: settings.music,
-                  onChanged: (v) {
-                    update(() => settings.music = v);
-                    unawaited(audio.sync(playing: _model?.active == true));
-                  },
-                ),
-                const Text(
-                  'Hiệu ứng âm thanh',
-                  style: TextStyle(color: _muted),
-                ),
-                Slider(
-                  value: settings.effects,
-                  onChanged: (v) => update(() => settings.effects = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Giảm hiệu ứng'),
-                  subtitle: const Text('Giảm mưa, sương và nhịp cảnh báo đỏ'),
-                  value: _reducedEffects,
-                  onChanged: (v) {
-                    update(() => _reducedEffects = v);
-                    setState(() {});
-                  },
-                ),
-              ],
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 350,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Tắt âm thanh'),
+                    value: settings.muted,
+                    onChanged: (v) {
+                      update(() => settings.muted = v);
+                      unawaited(audio.sync(playing: _model?.active == true));
+                    },
+                  ),
+                  SwitchListTile(
+                    title: const Text('Đổi vai hai tay'),
+                    subtitle: const Text('Tay phải di chuyển, tay trái ngắm'),
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.swapHands,
+                    onChanged: (value) {
+                      if (_model?.active == true) _pause();
+                      update(() => settings.swapHands = value);
+                      _handInput.swapHands = value;
+                      _handInput.reset();
+                      setState(() {});
+                    },
+                  ),
+                  const Text('Âm nền', style: TextStyle(color: _muted)),
+                  Slider(
+                    value: settings.music,
+                    onChanged: (v) {
+                      update(() => settings.music = v);
+                      unawaited(audio.sync(playing: _model?.active == true));
+                    },
+                  ),
+                  const Text(
+                    'Hiệu ứng âm thanh',
+                    style: TextStyle(color: _muted),
+                  ),
+                  Slider(
+                    value: settings.effects,
+                    onChanged: (v) => update(() => settings.effects = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Giảm hiệu ứng'),
+                    subtitle: const Text('Giảm mưa, sương và nhịp cảnh báo đỏ'),
+                    value: _reducedEffects,
+                    onChanged: (v) {
+                      update(() => _reducedEffects = v);
+                      setState(() {});
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -1856,10 +2496,15 @@ class _SurvivalAppState extends State<SurvivalApp>
                           fit: BoxFit.contain,
                         ),
                         CustomPaint(
-                          painter: HandPreviewPainter(
-                            hand.latest?.points ?? [],
-                            hand.pinched,
-                          ),
+                          painter: _twoHandMode
+                              ? TownHandsPreviewPainter(
+                                  hand.latest,
+                                  swap: settings.swapHands,
+                                )
+                              : HandPreviewPainter(
+                                  hand.latest?.points ?? [],
+                                  hand.pinched,
+                                ),
                         ),
                       ],
                     ),
@@ -1867,19 +2512,56 @@ class _SurvivalAppState extends State<SurvivalApp>
           ),
           const SizedBox(height: 7),
           Text(
-            !hand.ready
+            _twoHandMode
+                ? (_model == null
+                      ? (hand.handReady('right')
+                            ? 'TAY PHẢI SẴN SÀNG · NẮM KHOẢNG 0,5s ĐỂ BẮT ĐẦU'
+                            : 'Đưa tay phải rõ vào khung hình để bắt đầu. ${hand.error ?? ''}')
+                      : !hand.twoHandsReady
+                      ? 'Cần hai tay rõ, tách nhau trong khung. ${hand.statusMessage}'
+                      : 'HAI TAY SẴN SÀNG · ${settings.swapHands ? 'PHẢI ĐI / TRÁI NGẮM' : 'TRÁI ĐI / PHẢI NGẮM'}')
+                : !hand.ready
                 ? hand.statusMessage
                 : hand.pinched
                 ? 'CHỤM: NGẮM VÀ BẮN'
                 : 'TAY ĐÃ SẴN SÀNG',
             maxLines: 3,
             style: TextStyle(
-              color: hand.ready ? _teal : _gold,
+              color:
+                  (_twoHandMode
+                      ? (_model == null
+                            ? hand.handReady('right')
+                            : hand.twoHandsReady)
+                      : hand.ready)
+                  ? _teal
+                  : _gold,
               fontSize: 10,
               height: 1.4,
             ),
           ),
-          if (!hand.ready)
+          if (_twoHandMode && _model == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: LinearProgressIndicator(
+                key: const ValueKey('start-fist-progress'),
+                value: _handInput.startFistProgress,
+                minHeight: 6,
+                color: _gold,
+                backgroundColor: const Color(0xff263b42),
+                semanticsLabel: 'Nắm tay phải để bắt đầu sinh tồn',
+              ),
+            ),
+          if (_twoHandMode && _model == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'NẮM TAY PHẢI 0,5s: BẮT ĐẦU SINH TỒN.\nSau đó thả tay phải và mở cả hai tay để vào ván.\nNắm ngắn tay đi: đổi tư thế. Chụm ngắn: cửa/ẩn; giữ 0,8s/thả: băng bó.\nNắm ngắn tay ngắm: nạp; giữ 0,8s/thả: đổi súng.\nNắm tay đi 0,8s: bảng chọn bằng tay.',
+                style: TextStyle(color: _muted, fontSize: 10, height: 1.5),
+              ),
+            ),
+          if (!(_twoHandMode
+              ? (_model == null ? hand.handReady('right') : hand.twoHandsReady)
+              : hand.ready))
             TextButton(
               onPressed: hand.retry,
               child: const Text('Kết nối lại', style: TextStyle(fontSize: 10)),

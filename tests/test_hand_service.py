@@ -10,7 +10,7 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
-from core.shared_state import HandResult, SharedState
+from core.shared_state import HandResult, SharedState, TrackedHand
 from hand_service.server import HandServer, local_web_origin
 
 
@@ -89,6 +89,29 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await socket.send(json.dumps({"type": "command", "action": "start", "camera_index": -1}))
             await self.packet(socket, "error")
             self.assertFalse(self.service.active)
+
+    async def test_two_hand_packets_keep_independent_roles_over_real_websocket(self):
+        def publish(frame, right_ratio=.8, missing=False):
+            now = time.monotonic_ns()
+            hands = [TrackedHand('left',.25,.5,.8,((.2,.5),(.3,.5)))]
+            if not missing:
+                hands.append(TrackedHand('right',.75,.5,right_ratio,((.7,.5),(.8,.5))))
+            self.runtime.state.publish_hand(HandResult(now//1_000_000,frame,now,now,
+                .75,.5,right_ratio,hands=tuple(hands)))
+        async with connect(self.uri) as socket:
+            await socket.send(json.dumps({'type':'command','action':'start'}))
+            for frame in range(16):
+                publish(frame)
+                await asyncio.sleep(.05)
+            p = await self.packet(socket,predicate=lambda p: all(h['ready'] for h in p['hands'].values()))
+            self.assertEqual(p['hand_count'],2)
+            self.assertLess(p['hands']['left']['palm_x'],p['hands']['right']['palm_x'])
+            publish(17,right_ratio=.1)
+            p = await self.packet(socket,predicate=lambda p: p['hands']['right']['pinched'])
+            self.assertFalse(p['hands']['left']['pinched'])
+            publish(18,missing=True)
+            p = await self.packet(socket,predicate=lambda p: not p['hands']['right']['valid'])
+            self.assertEqual(p['hand_count'],1)
 
     async def test_web_origin_must_be_explicitly_allowed(self):
         allowed = 'http://127.0.0.1:8080'

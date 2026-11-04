@@ -16,6 +16,24 @@ class HandPacket {
   int get sequence => (data['seq'] as num?)?.toInt() ?? 0;
   int get jumpId => (data['jump_id'] as num?)?.toInt() ?? 0;
   String get epoch => text('epoch');
+  HandPacket? hand(String side) {
+    final hands = data['hands'];
+    final value = hands is Map ? hands[side] : null;
+    return value is Map<String, dynamic> ? HandPacket(value) : null;
+  }
+
+  Offset? get palm {
+    final x = number('palm_x'), y = number('palm_y');
+    return x != null && y != null && x >= 0 && x <= 1 && y >= 0 && y <= 1
+        ? Offset(x, y)
+        : null;
+  }
+
+  bool get open =>
+      flag('released') &&
+      !flag('pinched') &&
+      !flag('fist') &&
+      !flag('fist_pending');
   List<Offset> get points {
     final value = data['pinch_points'];
     if (value is! List || value.length != 2) return [];
@@ -77,6 +95,20 @@ class HandBridge extends ChangeNotifier {
   bool get ready => valid && latest?.flag('ready') == true;
   bool get released => valid && latest?.flag('released') == true;
   bool get pinched => valid && latest?.flag('pinched') == true;
+  HandPacket? get left => latest?.hand('left');
+  HandPacket? get right => latest?.hand('right');
+  bool handReady(String side) {
+    final h = latest?.hand(side);
+    return connected &&
+        ageMs <= 250 &&
+        h != null &&
+        h.flag('valid') &&
+        h.flag('ready') &&
+        h.palm != null;
+  }
+
+  bool get twoHandsReady => handReady('left') && handReady('right');
+  bool get twoHandsOpen => twoHandsReady && left!.open && right!.open;
   String get statusMessage {
     if (error != null) return error!;
     if (!connected) {
@@ -323,8 +355,10 @@ class HandBridge extends ChangeNotifier {
     await start();
   }
 
-  void calibrateOpen() => send('calibrate_open');
-  void calibrateClosed() => send('calibrate_closed');
+  void calibrateOpen({bool both = false}) =>
+      send('calibrate_open', both ? {'target': 'both'} : const {});
+  void calibrateClosed({bool both = false}) =>
+      send('calibrate_closed', both ? {'target': 'both'} : const {});
   void resetCalibration() => send('calibrate_reset');
   void _clearPreview() {
     final old = preview.value;

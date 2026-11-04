@@ -27,6 +27,34 @@ class TownRadar extends CustomPainter {
         Paint()..color = const Color(0xff3e5054),
       );
     }
+    for (final door in model.world.doors) {
+      final room = Rect.fromPoints(
+        map(door.room.topLeft),
+        map(door.room.bottomRight),
+      );
+      c.drawRect(
+        room,
+        Paint()
+          ..color = door.id == 'refuge'
+              ? const Color(0x67478e7d)
+              : const Color(0x676d6846),
+      );
+      c.drawRect(
+        Rect.fromPoints(map(door.rect.topLeft), map(door.rect.bottomRight)),
+        Paint()..color = door.open ? TownPainter.cyan : TownPainter.amber,
+      );
+      if (detailed) {
+        final text = TextPainter(
+          text: TextSpan(
+            text: door.name,
+            style: const TextStyle(color: Color(0xffead8aa), fontSize: 10),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        text.paint(c, room.center - Offset(text.width / 2, text.height / 2));
+        text.dispose();
+      }
+    }
     if (!model.jammed) {
       for (final e in model.enemies.where((e) => e.alive)) {
         c.drawCircle(

@@ -1,0 +1,18 @@
+{
+  "platform": "windows",
+  "mode": "profile",
+  "render_layer": "full",
+  "duration_seconds": 10,
+  "ticker_frames": 146,
+  "ticker_fps": 14.6,
+  "timing_samples": 148,
+  "build_p95_ms": 4.26,
+  "raster_p95_ms": 41.65,
+  "live_enemies": 9,
+  "phase_two_bosses": 2,
+  "ground_zones": 2,
+  "webcam": false,
+  "logical_view": "1265x682",
+  "device_pixel_ratio": 1.25,
+  "notes": "Native profile run with 9 AI enemies including ranged magic, gun effects, rain, fog, lanterns and camera movement. Excludes webcam recognition and browser overhead."
+}

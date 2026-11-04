@@ -23,6 +23,7 @@ class AppConfig:
     camera_height: int = 480
     camera_fps: int = 30
     detection_fps: float = 20.0
+    max_hands: int = 2
     render_fps: int = 60
     window_width: int = 1120
     window_height: int = 700
@@ -38,6 +39,8 @@ class AppConfig:
     model_path: Path = PROJECT_DIR / "models" / "hand_landmarker.task"
 
     def __post_init__(self) -> None:
+        if type(self.max_hands) is not int or self.max_hands not in (1, 2):
+            raise ValueError("Chỉ hỗ trợ nhận diện một hoặc hai tay.")
         if self.camera_index < 0:
             raise ValueError("Chỉ số camera phải từ 0 trở lên.")
         if self.camera_backend not in {"dshow", "msmf", "auto"}:

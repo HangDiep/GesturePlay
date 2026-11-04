@@ -21,6 +21,7 @@ class TownPainter extends CustomPainter {
   final bool showcase, reducedEffects, reticle;
   final double clock;
   static const amber = Color(0xffe7b96d), cyan = Color(0xff6bd3ce);
+  static const violet = Color(0xffc28bff);
   double get _time => showcase ? clock : model.elapsed;
   double get _shotHeight => TownView.muzzleHeight(model.stance.index);
   Offset _floor(Offset p) => TownView.floor(p);
@@ -34,7 +35,10 @@ class TownPainter extends CustomPainter {
     c.scale(view.zoom);
     c.translate(-view.origin.dx, -view.origin.dy);
     _ground(c, view);
+    _roomFloors(c, view);
     _lamps(c, view);
+    _magicTelegraphs(c, view);
+    _riftWarnings(c, view);
     for (final item in model.items.where(
       (i) => !i.taken && i.unlockAt <= model.elapsed,
     )) {
@@ -81,6 +85,7 @@ class TownPainter extends CustomPainter {
             ({
               double depth,
               FieldProp? prop,
+              TownDoor? door,
               Creature? enemy,
               TownDecoration? detail,
               bool player,
@@ -91,6 +96,7 @@ class TownPainter extends CustomPainter {
                 (
                   depth: _floor(p.rect.center).dy,
                   prop: p,
+                  door: null,
                   enemy: null,
                   detail: null,
                   player: false,
@@ -102,6 +108,7 @@ class TownPainter extends CustomPainter {
                   prop: null,
                   enemy: null,
                   detail: d,
+                  door: null,
                   player: false,
                 ),
             for (final e in model.enemies)
@@ -110,6 +117,7 @@ class TownPainter extends CustomPainter {
                   depth: _floor(e.position).dy,
                   prop: null,
                   enemy: e,
+                  door: null,
                   detail: null,
                   player: false,
                 ),
@@ -119,12 +127,24 @@ class TownPainter extends CustomPainter {
               enemy: null,
               detail: null,
               player: true,
+              door: null,
             ),
+            for (final d in model.world.doors)
+              (
+                depth: _floor(d.rect.center).dy,
+                prop: null,
+                door: d,
+                enemy: null,
+                detail: null,
+                player: false,
+              ),
           ]
           ..sort((a, b) => a.depth.compareTo(b.depth));
     for (final draw in draws) {
       if (draw.prop case final p?) {
         _prop(c, p);
+      } else if (draw.door case final door?) {
+        _door(c, door);
       } else if (draw.detail case final d?) {
         _detail(c, d);
       } else if (draw.enemy case final e?) {
@@ -134,6 +154,7 @@ class TownPainter extends CustomPainter {
       }
     }
     _wires(c, view);
+    _magicBolts(c, view);
     for (final b in model.bullets) {
       final p = _floor(b.position) - Offset(0, _shotHeight);
       c.drawLine(
@@ -346,6 +367,10 @@ class TownPainter extends CustomPainter {
   }
 
   void _prop(Canvas c, FieldProp p) {
+    if (p.sprite == 12) {
+      _wall(c, p.rect);
+      return;
+    }
     var image = art.props;
     var src = TownArt.propFrames[p.sprite!];
     var width = p.artSize!.width, height = p.artSize!.height;
@@ -368,7 +393,7 @@ class TownPainter extends CustomPainter {
       image = art.details;
       src =
           art.detailFrames[p.sprite == 2
-              ? (p.solid ? 3 : 0)
+              ? (p.artSize!.height >= 220 ? 3 : 0)
               : p.sprite == 4
               ? 1
               : 8];
@@ -393,6 +418,273 @@ class TownPainter extends CustomPainter {
         ..filterQuality = FilterQuality.low
         ..color = Color.fromRGBO(255, 255, 255, obscures ? .27 : 1),
     );
+  }
+
+  void _roomFloors(Canvas c, TownView view) {
+    for (final d in model.world.doors) {
+      if (!view.bounds.inflate(140).overlaps(d.room)) continue;
+      c.save();
+      c.transform(TownView.matrix);
+      c.drawRect(d.room.deflate(16), Paint()..color = const Color(0x6b153b3e));
+      c.drawRect(
+        d.room.deflate(34),
+        Paint()
+          ..color = const Color(0x443e7472)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+      c.restore();
+      _label(
+        c,
+        d.name,
+        _floor(d.room.center) + const Offset(0, 30),
+        const Color(0xff8ab2a9),
+        13,
+      );
+    }
+    for (final s in model.world.stashes) {
+      if (!view.bounds.inflate(80).contains(s.position)) continue;
+      final p = _floor(s.position) - const Offset(0, 12);
+      final color = s.id == 'refuge' ? cyan : amber;
+      _shadow(c, s.position, 27);
+      if (!s.empty) _glow(c, p, 38, color, .16);
+      c.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: p, width: 45, height: 29),
+          const Radius.circular(3),
+        ),
+        Paint()..color = const Color(0xff36484b),
+      );
+      c.drawRect(
+        Rect.fromCenter(
+          center: p - Offset(0, s.opened ? 18 : 10),
+          width: 46,
+          height: 7,
+        ),
+        Paint()..color = color.withValues(alpha: .65),
+      );
+      if (s.id == 'refuge') {
+        c.drawLine(
+          p - const Offset(6, 0),
+          p + const Offset(6, 0),
+          Paint()
+            ..color = color
+            ..strokeWidth = 3,
+        );
+        c.drawLine(
+          p - const Offset(0, 6),
+          p + const Offset(0, 6),
+          Paint()
+            ..color = color
+            ..strokeWidth = 3,
+        );
+      } else {
+        for (var j = -1; j <= 1; j++) {
+          c.drawLine(
+            p + Offset(j * 7, -5),
+            p + Offset(j * 7, 5),
+            Paint()
+              ..color = color
+              ..strokeWidth = 3,
+          );
+        }
+      }
+      if ((s.position - model.player).distance < 135) {
+        _label(
+          c,
+          s.empty ? 'ĐÃ HẾT' : s.name.toUpperCase(),
+          p + const Offset(0, 30),
+          color,
+          10,
+        );
+      }
+    }
+  }
+
+  void _wall(Canvas c, Rect r) {
+    final points = [
+      _floor(r.topLeft),
+      _floor(r.topRight),
+      _floor(r.bottomRight),
+      _floor(r.bottomLeft),
+    ];
+    const height = 70.0;
+    final bounds = TownView.envelope([
+      ...points,
+      ...points.map((p) => p - const Offset(0, height)),
+    ]);
+    final obscures =
+        bounds.contains(_floor(model.player) - const Offset(0, 25)) &&
+        _floor(r.center).dy > _floor(model.player).dy;
+    final alpha = obscures ? .32 : 1.0;
+    for (final i in const [2, 3]) {
+      final a = points[i], b = points[(i + 1) % 4];
+      final face = Path()
+        ..moveTo(a.dx, a.dy)
+        ..lineTo(b.dx, b.dy)
+        ..lineTo(b.dx, b.dy - height)
+        ..lineTo(a.dx, a.dy - height)
+        ..close();
+      c.drawPath(
+        face,
+        Paint()
+          ..shader = art.groundShader
+          ..color = Color.fromRGBO(255, 255, 255, alpha)
+          ..colorFilter = ColorFilter.mode(
+            i.isEven ? const Color(0xff9bb1b4) : const Color(0xff667c85),
+            BlendMode.modulate,
+          ),
+      );
+      for (var course = 1; course < 5; course++) {
+        final v = Offset(0, -height * course / 5);
+        c.drawLine(
+          a + v,
+          b + v,
+          Paint()
+            ..color = const Color(0xff71827c).withValues(alpha: alpha * .4)
+            ..strokeWidth = 1,
+        );
+      }
+      final segments = math.max(1, (b - a).distance ~/ 32);
+      for (var k = 1; k < segments; k++) {
+        final p = Offset.lerp(a, b, k / segments)!;
+        c.drawLine(
+          p,
+          p - const Offset(0, height),
+          Paint()
+            ..color = const Color(0xff091923).withValues(alpha: alpha * .65)
+            ..strokeWidth = 1,
+        );
+      }
+    }
+    final top = Path()
+      ..addPolygon(
+        points.map((p) => p - const Offset(0, height)).toList(),
+        true,
+      );
+    c.drawPath(
+      top,
+      Paint()..color = const Color(0xff53625b).withValues(alpha: alpha),
+    );
+  }
+
+  void _door(Canvas c, TownDoor door) {
+    if (door.broken) {
+      _label(c, 'CỬA VỠ', _floor(door.rect.center), const Color(0xffbd8873), 9);
+      return;
+    }
+    final a = _floor(door.rect.bottomLeft);
+    final b = _floor(
+      door.open
+          ? door.rect.bottomLeft - const Offset(0, 100)
+          : door.rect.bottomRight,
+    );
+    const height = 72.0;
+    final fade = (model.player - door.rect.center).distance < 70 ? .5 : 1.0;
+    c.drawPath(
+      Path()
+        ..moveTo(a.dx, a.dy)
+        ..lineTo(b.dx, b.dy)
+        ..lineTo(b.dx, b.dy - height)
+        ..lineTo(a.dx, a.dy - height)
+        ..close(),
+      Paint()..color = const Color(0xff55432f).withValues(alpha: fade),
+    );
+    for (var i = 0; i <= 8; i++) {
+      final p = Offset.lerp(a, b, i / 8)!;
+      c.drawLine(
+        p,
+        p - const Offset(0, height),
+        Paint()
+          ..color = const Color(0xffb6a07b).withValues(alpha: fade * .6)
+          ..strokeWidth = 1.2,
+      );
+    }
+    for (final h in [18.0, 55.0]) {
+      c.drawLine(
+        a - Offset(0, h),
+        b - Offset(0, h),
+        Paint()
+          ..color = const Color(0xff172a31).withValues(alpha: fade)
+          ..strokeWidth = 5,
+      );
+    }
+    final middle = (a + b) / 2;
+    c.drawCircle(
+      middle - const Offset(0, 38),
+      3,
+      Paint()..color = door.locked ? amber : cyan,
+    );
+    if ((model.player - door.rect.center).distance < 220) {
+      _label(
+        c,
+        door.locked
+            ? 'CẦN CHÌA KHO'
+            : door.open
+            ? 'CỬA MỞ'
+            : 'CỬA ĐÓNG',
+        middle - const Offset(0, 88),
+        amber,
+        9,
+      );
+      c.drawRect(
+        Rect.fromCenter(
+          center: middle - const Offset(0, 78),
+          width: 65,
+          height: 4,
+        ),
+        Paint()..color = const Color(0xff061017),
+      );
+      c.drawRect(
+        Rect.fromLTWH(
+          middle.dx - 32.5,
+          middle.dy - 80,
+          65 * door.health / 120,
+          4,
+        ),
+        Paint()..color = door.health < 45 ? const Color(0xffeb7e6c) : cyan,
+      );
+    }
+  }
+
+  void _riftWarnings(Canvas c, TownView view) {
+    for (final zone in model.bossRifts) {
+      if (!view.bounds.inflate(140).contains(zone.position)) continue;
+      const color = Color(0xffff7399);
+      final progress = 1 - zone.warning / 1.4;
+      final alpha = zone.detonated ? zone.fade / .5 : 1.0;
+      c.save();
+      c.transform(TownView.matrix);
+      c.drawCircle(
+        zone.position,
+        BossRift.radius,
+        Paint()..color = color.withValues(alpha: .10 * alpha),
+      );
+      c.restore();
+      _groundRing(
+        c,
+        zone.position,
+        BossRift.radius,
+        color.withValues(alpha: .85 * alpha),
+        2,
+      );
+      _groundRing(
+        c,
+        zone.position,
+        BossRift.radius * progress,
+        color.withValues(alpha: .5 * alpha),
+        1.5,
+      );
+      if (!zone.detonated) {
+        _label(
+          c,
+          'NỔ ${zone.warning.toStringAsFixed(1)}s',
+          _floor(zone.position) - const Offset(0, 14),
+          color,
+          11,
+        );
+      }
+    }
   }
 
   void _detail(Canvas c, TownDecoration d) {
@@ -476,6 +768,39 @@ class TownPainter extends CustomPainter {
           ..color = color
           ..strokeWidth = 3,
       );
+    } else if (i.kind.startsWith('gun_')) {
+      final pistol = i.kind == 'gun_pistol';
+      final length = pistol ? 18.0 : 34.0;
+      c.drawLine(
+        p - Offset(length / 2, 3),
+        p + Offset(length / 2, 3),
+        Paint()
+          ..color = color
+          ..strokeWidth = pistol ? 5 : 4,
+      );
+      c.drawLine(
+        p + const Offset(0, 1),
+        p + const Offset(-3, 8),
+        Paint()
+          ..color = color
+          ..strokeWidth = 4,
+      );
+    } else if (i.kind == 'key_armory') {
+      _ring(c, p - const Offset(6, 0), 4, amber, 2);
+      c.drawLine(
+        p - const Offset(2, 0),
+        p + const Offset(9, 0),
+        Paint()
+          ..color = amber
+          ..strokeWidth = 2,
+      );
+      c.drawLine(
+        p + const Offset(7, 0),
+        p + const Offset(7, 4),
+        Paint()
+          ..color = amber
+          ..strokeWidth = 2,
+      );
     } else if (i.kind == 'core') {
       c.drawCircle(p, 5, Paint()..color = color);
       _ring(c, p, 8, color, 1);
@@ -495,8 +820,12 @@ class TownPainter extends CustomPainter {
       i.kind == 'core'
           ? 'LÕI TÍN HIỆU'
           : i.kind == 'health'
-          ? '+40 MÁU'
-          : '+48 ĐẠN',
+          ? 'TÚI MÁU · CẤT VÀO TÚI'
+          : i.kind == 'key_armory'
+          ? 'CHÌA KHO'
+          : i.kind.startsWith('gun_')
+          ? (i.kind == 'gun_pistol' ? 'SÚNG LỤC · 1' : 'SHOTGUN · 3')
+          : 'ĐẠN VŨ KHÍ',
       p + const Offset(0, 28),
       color,
       9,
@@ -542,7 +871,7 @@ class TownPainter extends CustomPainter {
         ? 6
         : m.hurtFor > .16
         ? 5
-        : m.reloadFor > 0
+        : m.reloadFor > 0 || m.healing
         ? 4
         : m.shotCooldown > .10
         ? 3
@@ -596,6 +925,9 @@ class TownPainter extends CustomPainter {
     if (!dead && m.reloadFor > 0) {
       _label(c, 'ĐANG NẠP', at - const Offset(0, 84), amber, 10);
     }
+    if (!dead && m.healing) {
+      _label(c, 'BĂNG BÓ', at - const Offset(0, 84), cyan, 10);
+    }
   }
 
   void _enemy(Canvas c, Creature e) {
@@ -612,7 +944,7 @@ class TownPainter extends CustomPainter {
         ? 5
         : e.strikeFor > 0 || e.weak > 2.8
         ? 4
-        : e.charge > 0 || e.windup > 0
+        : e.charge > 0 || e.windup > 0 || e.casting
         ? 3
         : 1 + (e.animation * 6).floor() % 2;
     final at = _floor(e.position);
@@ -674,6 +1006,18 @@ class TownPainter extends CustomPainter {
       Paint()..color = color,
     );
     if (e.stun > 0) _label(c, 'CHOÁNG', p - const Offset(0, 12), cyan, 9);
+    if (e.casting) {
+      _label(c, 'TỤ MA LỰC', p - const Offset(0, 12), violet, 10);
+    }
+    if (e.enraged) {
+      _label(
+        c,
+        e.phaseFor > 0 ? 'BOSS CHUYỂN DẠNG!' : 'BOSS · GIAI ĐOẠN 2',
+        p - const Offset(0, 26),
+        const Color(0xfff98c9f),
+        10,
+      );
+    }
     if (e.weak > 0) {
       _label(c, 'LỘ ĐIỂM YẾU', p - const Offset(0, 12), amber, 10);
     }
@@ -692,6 +1036,41 @@ class TownPainter extends CustomPainter {
           amber.withValues(alpha: a),
           13,
         );
+      } else if (e.kind == 'rift_blast') {
+        _glow(c, p, 100, const Color(0xfffa6d91), a * .4);
+        _groundRing(
+          c,
+          e.position,
+          BossRift.radius * (1 + (1 - a) * .3),
+          const Color(0xffff719c).withValues(alpha: a),
+          4,
+        );
+      } else if (e.kind == 'door_hit') {
+        _glow(c, p - const Offset(0, 30), 34, amber, a * .4);
+      } else if (e.kind == 'magic_release' || e.kind == 'magic_impact') {
+        _glow(c, p - const Offset(0, 22), 48, violet, a * .6);
+        _groundRing(
+          c,
+          e.position,
+          12 + (1 - a) * 45,
+          violet.withValues(alpha: a),
+          2,
+        );
+        if (!reducedEffects) {
+          for (var i = 0; i < 7; i++) {
+            final direction = Offset(
+              math.cos(i * math.pi * 2 / 7),
+              math.sin(i * math.pi * 2 / 7),
+            );
+            c.drawLine(
+              p - const Offset(0, 22) + direction * 6,
+              p - const Offset(0, 22) + direction * (12 + (1 - a) * 30),
+              Paint()
+                ..color = violet.withValues(alpha: a)
+                ..strokeWidth = 1.5,
+            );
+          }
+        }
       } else if (e.kind == 'flash') {
         _groundRing(c, e.position, 250 * (1 - a), cyan.withValues(alpha: a), 3);
       } else if (e.kind == 'slam') {
@@ -721,6 +1100,95 @@ class TownPainter extends CustomPainter {
                 ..strokeWidth = 1,
             );
           }
+        }
+      }
+    }
+  }
+
+  void _magicTelegraphs(Canvas c, TownView view) {
+    for (final e in model.enemies.where(
+      (e) =>
+          e.alive && e.casting && view.bounds.inflate(180).contains(e.position),
+    )) {
+      final progress = 1 - e.castFor / e.castDuration;
+      final color = e.kind == CreatureKind.boss ? violet : cyan;
+      _groundRing(
+        c,
+        e.position,
+        43 + progress * 15,
+        color.withValues(alpha: .8),
+        2,
+      );
+      _groundRing(c, e.castTarget!, 25, color.withValues(alpha: .6), 1.5);
+      final at = _floor(e.position) - const Offset(0, 25);
+      final target = _floor(e.castTarget!) - const Offset(0, 25),
+          delta = target - at;
+      // The target marker stays where the player was when charging began.
+      if (delta.distance > 1) {
+        for (double along = 25; along < delta.distance; along += 26) {
+          c.drawLine(
+            at + delta / delta.distance * along,
+            at + delta / delta.distance * math.min(along + 11, delta.distance),
+            Paint()
+              ..color = color.withValues(alpha: .18 + progress * .14)
+              ..strokeWidth = 1.2,
+          );
+        }
+      }
+      _glow(c, at, 35 + progress * 25, color, .25 + progress * .25);
+      for (var j = 0; j < 6; j++) {
+        final a = j * math.pi / 3 + (reducedEffects ? 0 : _time * .9);
+        final p = e.position + Offset(math.cos(a), math.sin(a)) * 52;
+        final q = e.position + Offset(math.cos(a + .1), math.sin(a + .1)) * 61;
+        c.drawLine(
+          _floor(p),
+          _floor(q),
+          Paint()
+            ..color = color
+            ..strokeWidth = 2,
+        );
+      }
+    }
+  }
+
+  void _magicBolts(Canvas c, TownView view) {
+    for (final bolt in model.enemyBolts) {
+      if (!view.bounds.inflate(100).contains(bolt.position)) continue;
+      final p = _floor(bolt.position) - const Offset(0, 22);
+      final color = bolt.boss ? violet : cyan;
+      final tail =
+          _floor(bolt.position - bolt.direction * 48) - const Offset(0, 22);
+      _glow(c, p, bolt.boss ? 36 : 28, color, .65);
+      c.drawLine(
+        tail,
+        p,
+        Paint()
+          ..color = color.withValues(alpha: .45)
+          ..strokeWidth = 7
+          ..strokeCap = StrokeCap.round,
+      );
+      c.drawLine(
+        (tail + p) / 2,
+        p,
+        Paint()
+          ..color = color
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round,
+      );
+      c.drawCircle(p, bolt.radius * .75, Paint()..color = color);
+      c.drawCircle(p, 3.2, Paint()..color = const Color(0xfff4eaff));
+      _ring(c, p, bolt.radius + 3, color.withValues(alpha: .75), 1);
+      if (!reducedEffects) {
+        final angle = _time * 8 + bolt.sourceId;
+        for (var j = 0; j < 2; j++) {
+          final at =
+              p +
+              Offset(
+                    math.cos(angle + j * math.pi),
+                    math.sin(angle + j * math.pi),
+                  ) *
+                  (bolt.radius + 6);
+          c.drawCircle(at, 1.7, Paint()..color = color);
         }
       }
     }

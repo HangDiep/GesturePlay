@@ -43,6 +43,7 @@ class HandServer:
         self.config = config or AppConfig()
         self.runtime = runtime or HandRuntime(self.config)
         self.controller = GestureController(self.config)
+        self.hand_controllers = {side: GestureController(self.config) for side in ('left', 'right')}
         self.idle_timeout = idle_timeout
         self.shutdown_event = asyncio.Event()
         self.owner = None
@@ -68,25 +69,34 @@ class HandServer:
                 self.config = replace(self.config, camera_index=index, camera_backend=backend)
                 self.runtime = HandRuntime(self.config)
                 self.controller.reset_calibration()
+                for controller in self.hand_controllers.values():
+                    controller.reset_calibration()
             self.active = True
         elif action == "stop":
             self.active = False
             self.runtime.request_stop()
             self.controller.reset()
+            for controller in self.hand_controllers.values():
+                controller.reset()
         elif action == "restart":
             self.runtime.request_stop()
             self.controller.reset()
+            for controller in self.hand_controllers.values():
+                controller.reset()
             self.active = True
         elif action == "preview":
             if type(payload.get("enabled")) is not bool:
                 raise ValueError("Trạng thái preview không hợp lệ.")
             self.preview = payload["enabled"]
         elif action == "calibrate_open":
-            self.controller.calibrate_open(time.monotonic_ns())
+            for controller in self.calibration_targets(payload):
+                controller.calibrate_open(time.monotonic_ns())
         elif action == "calibrate_closed":
-            self.controller.calibrate_closed(time.monotonic_ns())
+            for controller in self.calibration_targets(payload):
+                controller.calibrate_closed(time.monotonic_ns())
         elif action == "calibrate_reset":
-            self.controller.reset_calibration()
+            for controller in self.calibration_targets(payload):
+                controller.reset_calibration()
         elif action == "shutdown":
             self.shutdown_event.set()
         else:
@@ -101,6 +111,35 @@ class HandServer:
             except (ValueError, TypeError) as exc:
                 await websocket.send(json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False))
 
+    def calibration_targets(self, payload):
+        target = payload.get('target', 'primary')
+        if target == 'both':
+            return list(self.hand_controllers.values())
+        if target in self.hand_controllers:
+            return [self.hand_controllers[target]]
+        if target == 'primary':
+            return [self.controller]
+        raise ValueError('Tay hiệu chỉnh không hợp lệ.')
+
+    def two_hand_packet(self, hand, now_ns, available):
+        result = {}
+        for side, controller in self.hand_controllers.items():
+            observation = next((h for h in hand.hands if h.side == side), None) if hand else None
+            sample = replace(hand, palm_x=observation.palm_x, palm_y=observation.palm_y,
+                             pinch_ratio=observation.pinch_ratio, pinch_points=observation.pinch_points,
+                             fist=observation.fist, hands=()) if observation else None
+            g = controller.update(sample, now_ns, available)
+            result[side] = {
+                'valid': g.valid, 'ready': g.ready, 'released': g.released,
+                'pinched': g.pinched, 'fist': g.fist,
+                'fist_pending': bool(observation and g.valid and observation.fist and not g.fist),
+                'palm_x': finite(observation.palm_x) if observation else None,
+                'palm_y': finite(observation.palm_y) if observation else None,
+                'pinch_points': observation.pinch_points if observation and g.valid else None,
+                'reason': g.reason,
+            }
+        return result
+
     async def handler(self, websocket):
         if self.owner is not None:
             await websocket.close(1008, "Phần nhận diện đang được một cửa sổ khác sử dụng.")
@@ -110,6 +149,8 @@ class HandServer:
         self.epoch = str(uuid.uuid4())
         self.jump_id = self.sequence = 0
         self.controller.reset()
+        for controller in self.hand_controllers.values():
+            controller.reset()
         receiver = asyncio.create_task(self.receive(websocket))
         last_state = None
         last_send = last_preview = 0.0
@@ -125,6 +166,8 @@ class HandServer:
                     self.runtime.ensure_started()
                 if self.runtime.state is not last_state:
                     self.controller.reset()
+                    for controller in self.hand_controllers.values():
+                        controller.reset()
                     last_state = self.runtime.state
                     previous_counts = (0, 0)
                     rate_at = now
@@ -132,6 +175,7 @@ class HandServer:
                 available = (self.active and not self.runtime.closing and
                              state.camera.phase == "running" and state.tracker.phase == "running")
                 gesture = self.controller.update(state.hand, now_ns, available)
+                hands = self.two_hand_packet(state.hand, now_ns, available)
                 if gesture.jump_pressed:
                     self.jump_id += 1
                 if now - rate_at >= 1:
@@ -165,6 +209,7 @@ class HandServer:
                         "camera_phase": state.camera.phase, "tracker_phase": state.tracker.phase,
                         "camera_message": state.camera.message, "tracker_message": state.tracker.message,
                         "camera_fps": camera_fps, "result_fps": result_fps,
+                        "hands": hands, "hand_count": sum(h['valid'] for h in hands.values()),
                     }
                     await asyncio.wait_for(websocket.send(json.dumps(packet, ensure_ascii=False, allow_nan=False)), 1)
                     last_send = now

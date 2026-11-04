@@ -31,6 +31,28 @@ class HidingSpot {
   Rect get area => Rect.fromCenter(center: center, width: 110, height: 90);
 }
 
+class TownDoor {
+  TownDoor(this.id, this.name, this.rect, this.room, {this.locked = false});
+  final String id, name;
+  final Rect rect, room;
+  bool locked, _open = false;
+  bool get open => _open;
+  double health = 120;
+  bool get broken => health <= 0;
+  Offset get outside => rect.center + const Offset(0, 85);
+}
+
+class TownStash {
+  TownStash(this.id, this.name, this.position, {this.locked = false});
+  final String id, name;
+  final Offset position;
+  bool locked, opened = false;
+  int medStock = 2, rifleRounds = 48, pistolRounds = 24, shells = 8;
+  bool shotgunAvailable = false;
+  bool get empty =>
+      medStock + rifleRounds + pistolRounds + shells == 0 && !shotgunAvailable;
+}
+
 class FieldWorld {
   FieldWorld(this.id, {this.quarantine = false}) {
     final rng = math.Random(731 + id.index);
@@ -45,6 +67,7 @@ class FieldWorld {
     );
     if (quarantine) {
       _buildQuarantineTown();
+      _buildInteractiveRooms();
     } else {
       switch (id) {
         case FieldMap.forest:
@@ -189,7 +212,7 @@ class FieldWorld {
           ]);
       }
     }
-    obstacles = List.unmodifiable(
+    _staticObstacles = List.unmodifiable(
       props.where((p) => p.solid).map((p) => p.rect),
     );
   }
@@ -216,7 +239,9 @@ class FieldWorld {
               : 1],
           Rect.fromCenter(center: Offset(x, y), width: width, height: depth),
           const Color(0xff283a3d),
-          solid: solid,
+          // Town vegetation is passable; houses, walls and hard cover keep
+          // their solid footprints. Legacy maps use their own collision rules.
+          solid: solid && sprite != 2,
           sprite: sprite,
           artSize: Size(artWidth, artHeight),
           lowCover: const [4, 7, 8, 11].contains(sprite),
@@ -370,7 +395,78 @@ class FieldWorld {
       : (p.dy < 1800 ? 'SÂN ĐỀN' : 'VƯỜN HOANG');
   final props = <FieldProp>[];
   final roads = <Rect>[], hazards = <Rect>[];
-  late final List<Rect> obstacles;
+  late final List<Rect> _staticObstacles;
+  List<Rect>? _collisionCache;
+  List<Rect> get obstacles => _collisionCache ??= List.unmodifiable([
+    ..._staticObstacles,
+    ...doors.where((d) => !d.open).map((d) => d.rect),
+  ]);
+  final doors = <TownDoor>[];
+  final stashes = <TownStash>[];
+  int navigationVersion = 0;
+  void setDoorOpen(TownDoor door, bool open) {
+    if (door.open == open) return;
+    door._open = open;
+    _collisionCache = null;
+    _walkCache.clear();
+    navigationVersion++;
+  }
+
+  void _buildInteractiveRooms() {
+    void room(String id, String name, Rect area, {bool locked = false}) {
+      // Keep an apron clear so neighbouring billboard roofs do not cover the
+      // walk-in room or its doorway even when their footprints sit outside it.
+      final apron = Rect.fromLTRB(
+        area.left - 120,
+        area.top - 80,
+        area.right + 160,
+        area.bottom + 260,
+      );
+      props.removeWhere((p) => p.rect.overlaps(apron));
+      void wall(Rect r) => props.add(
+        FieldProp(
+          PropKind.rock,
+          r,
+          const Color(0xff27383e),
+          sprite: 12,
+          artSize: Size(r.width, 90),
+        ),
+      );
+      wall(Rect.fromLTWH(area.left, area.top, area.width, 22));
+      wall(Rect.fromLTWH(area.left, area.top, 22, area.height));
+      wall(Rect.fromLTWH(area.right - 22, area.top, 22, area.height));
+      wall(Rect.fromLTWH(area.left, area.bottom - 22, area.width / 2 - 50, 22));
+      wall(
+        Rect.fromLTWH(
+          area.center.dx + 50,
+          area.bottom - 22,
+          area.width / 2 - 50,
+          22,
+        ),
+      );
+      final door = TownDoor(
+        id,
+        name,
+        Rect.fromLTWH(area.center.dx - 50, area.bottom - 22, 100, 22),
+        area,
+        locked: locked,
+      );
+      door._open = !locked;
+      doors.add(door);
+    }
+
+    room('refuge', 'PHÒNG TRÚ', const Rect.fromLTWH(420, 1700, 360, 300));
+    room(
+      'armory',
+      'KHO TIẾP TẾ',
+      const Rect.fromLTWH(2800, 2080, 400, 360),
+      locked: true,
+    );
+    hidingSpots.add(const HidingSpot('Góc phòng trú', Offset(510, 1840)));
+    stashes.add(TownStash('refuge', 'Tủ thuốc', const Offset(690, 1810)));
+    stashes.add(TownStash('armory', 'Hòm vũ khí', const Offset(3090, 2160)));
+  }
+
   late final List<Offset> cores;
   final _walkCache = <int, bool>{};
   String get title =>
@@ -423,9 +519,13 @@ class FieldWorld {
 
   /// Low walls block low silhouettes and low shots, but can be seen/fired over
   /// when standing or briefly peeking. Movement always uses solid footprints.
-  Iterable<Rect> shotObstacles({required bool lowShot}) => props
-      .where((p) => p.solid && (lowShot || !p.lowCover))
-      .map((p) => p.rect);
+  Iterable<Rect> shotObstacles({required bool lowShot}) sync* {
+    yield* props
+        .where((p) => p.solid && (lowShot || !p.lowCover))
+        .map((p) => p.rect);
+    yield* doors.where((d) => !d.open).map((d) => d.rect);
+  }
+
   bool clearSight(Offset a, Offset b, {required bool lowProfile}) =>
       !shotObstacles(
         lowShot: lowProfile,

@@ -173,7 +173,7 @@ void main() {
   );
 
   test(
-    'a complete town run is winnable using normal ammunition, routes and skills',
+    'a complete town run is winnable using only the gun, normal supplies and movement',
     () {
       final m = town();
       final goals = [...m.world.cores, ...m.world.supplies, FieldWorld.spawn];
@@ -183,6 +183,7 @@ void main() {
         if (goal < goals.length) {
           if ((m.player - goals[goal]).distance < 30) {
             goal++;
+            if (goal == goals.length) goal = 0;
             step = 0;
             path = goal < goals.length
                 ? m.world.route(m.player, goals[goal])
@@ -217,14 +218,6 @@ void main() {
               );
         if (enemies.isNotEmpty) {
           m.shoot(enemies.first.position);
-          if (enemies.any(
-            (e) => e.charge > 0 && (e.position - m.player).distance < 230,
-          )) {
-            m.flash();
-          }
-          if (enemies.any((e) => (e.position - m.player).distance < 75)) {
-            m.trap();
-          }
         } else if (m.ammo < 24) {
           m.reload();
         }
@@ -291,7 +284,8 @@ void main() {
       expect(input.waitingRelease, true);
       input.apply(m, bridge, .1);
       expect(m.phase, FieldPhase.playing);
-      expect(m.flashes, 2);
+      expect(m.flashes, 0);
+      expect(m.reloadFor, 1.65);
       expect(m.firing, false);
       input.apply(m, bridge, .1);
       expect(m.movement, Offset.zero);

@@ -13,6 +13,16 @@ class CameraFrame:
 
 
 @dataclass(frozen=True)
+class TrackedHand:
+    side: str
+    palm_x: float
+    palm_y: float
+    pinch_ratio: float
+    pinch_points: tuple[tuple[float, float], tuple[float, float]]
+    fist: bool = False
+
+
+@dataclass(frozen=True)
 class HandResult:
     timestamp_ms: int
     frame_id: int
@@ -23,6 +33,7 @@ class HandResult:
     pinch_ratio: float | None = None
     pinch_points: tuple[tuple[float, float], tuple[float, float]] | None = None
     fist: bool = False
+    hands: tuple[TrackedHand, ...] = ()
 
     @property
     def has_hand(self) -> bool:

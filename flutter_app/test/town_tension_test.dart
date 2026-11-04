@@ -15,6 +15,37 @@ void advance(ExplorationModel m, double seconds) {
 }
 
 void main() {
+  test('town trees are passable while house footprints block movement', () {
+    final w = quietTown().world;
+    final trees = w.props.where((p) => p.kind == PropKind.tree).toList();
+    expect(trees, isNotEmpty);
+    expect(trees.every((p) => !p.solid), true);
+    final tree = trees.first;
+    var at = tree.rect.topCenter - const Offset(0, 35);
+    final start = at;
+    for (var i = 0; i < 30; i++) {
+      at = w.move(at, const Offset(0, 5));
+    }
+    expect(at.dy, closeTo(start.dy + 150, .001));
+    expect(w.inVegetation(tree.rect.center), true);
+
+    final houses = w.props.where((p) => p.sprite == 0).toList();
+    expect(houses, isNotEmpty);
+    for (final house in houses) {
+      expect(house.solid, true);
+      expect(w.walkable(house.rect.center), false);
+    }
+    final house = houses.first;
+    for (final radius in [16.0, 25.0]) {
+      at = house.rect.bottomCenter + const Offset(0, 55);
+      for (var i = 0; i < 40; i++) {
+        at = w.move(at, const Offset(0, -5), radius);
+      }
+      expect(at.dy, greaterThanOrEqualTo(house.rect.bottom + radius));
+      expect(at.dy, lessThan(house.rect.bottom + 55));
+    }
+  });
+
   test(
     'new arrivals cannot know the exact position of an already hidden player',
     () {
@@ -215,6 +246,10 @@ void main() {
     expect(m.lowHealth, true);
     m.player = m.world.supplies.first;
     m.update(.025);
+    expect(m.health, 25);
+    expect(m.medkits, 2);
+    expect(m.useMedkit(), true);
+    advance(m, 2.9);
     expect(m.health, 65);
     expect(m.lowHealth, false);
     m.elapsed = 51.99;

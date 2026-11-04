@@ -12,7 +12,8 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from config import AppConfig
-from core.shared_state import CameraFrame, HandResult, SharedState
+from core.shared_state import CameraFrame, HandResult, SharedState, TrackedHand
+from core.hand_roles import HandRoles
 
 
 LOGGER = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ def landmarker_options(config: AppConfig, callback):
     return vision.HandLandmarkerOptions(
         base_options=python.BaseOptions(model_asset_path=str(config.model_path)),
         running_mode=vision.RunningMode.LIVE_STREAM,
-        num_hands=1,
+        num_hands=config.max_hands,
         min_hand_detection_confidence=config.confidence,
         min_hand_presence_confidence=config.confidence,
         min_tracking_confidence=config.confidence,
@@ -72,6 +73,7 @@ class HandTracker:
         # MediaPipe có thể bỏ input khi bận. Metadata cũng phải có giới hạn.
         self._pending: OrderedDict[int, tuple[int, int, float]] = OrderedDict()
         self._last_timestamp_ms = -1
+        self._roles = HandRoles()
 
     def start(self) -> None:
         self._thread.start()
@@ -111,7 +113,31 @@ class HandTracker:
             if metadata is None:
                 return
             frame_id, captured_at_ns, aspect = metadata
-            landmarks = result.hand_landmarks[0] if result.hand_landmarks else None
+            candidates = []
+            for i, marks in enumerate(result.hand_landmarks):
+                if len(marks) != 21:
+                    continue
+                center = palm_center(marks)
+                ratio = pinch_ratio(marks, aspect)
+                points = ((marks[4].x, marks[4].y), (marks[8].x, marks[8].y))
+                values = (*center, *(v for p in points for v in p))
+                if ratio is None or any(not math.isfinite(v) or not 0 <= v <= 1 for v in values):
+                    continue
+                labels = getattr(result, "handedness", [])
+                label = labels[i][0] if i < len(labels) and labels[i] else None
+                # CameraWorker mirrors once for the preview. Tasks handedness
+                # is inverted by that reflection, so restore the physical side.
+                native_side = getattr(label, "category_name", "").lower()
+                side = {'left': 'right', 'right': 'left'}.get(native_side, '')
+                score = getattr(label, "score", 0)
+                candidates.append((side if score >= .6 else "", center, ratio, points,
+                                   is_fist(marks, aspect), marks))
+            assigned = self._roles.assign(candidates, timestamp_ms)
+            hands = tuple(TrackedHand(side, *c[1], c[2], c[3], c[4])
+                          for side, c in assigned.items())
+            # Keep the protocol-1 single-hand fields for the original games.
+            primary = assigned.get("right") or next(iter(assigned.values()), None)
+            landmarks = primary[5] if primary else (result.hand_landmarks[0] if result.hand_landmarks else None)
             center = palm_center(landmarks) if landmarks else (None, None)
             pinch = pinch_ratio(landmarks, aspect) if landmarks else None
             points = ((landmarks[4].x, landmarks[4].y),
@@ -119,6 +145,7 @@ class HandTracker:
             self.state.publish_hand(HandResult(
                 timestamp_ms, frame_id, captured_at_ns, completed_at_ns, *center, pinch, points,
                 is_fist(landmarks, aspect),
+                hands,
             ))
         except Exception as exc:
             # Không để ngoại lệ Python thoát qua biên callback native.
@@ -132,7 +159,7 @@ class HandTracker:
             with vision.HandLandmarker.create_from_options(
                 landmarker_options(self.config, self._on_result)
             ) as landmarker:
-                self.state.set_tracker_status("running", "Một bàn tay · LIVE_STREAM")
+                self.state.set_tracker_status("running", f"Tối đa {self.config.max_hands} tay · LIVE_STREAM")
                 last_frame_id = -1
                 next_send = 0.0
                 interval = 1.0 / self.config.detection_fps

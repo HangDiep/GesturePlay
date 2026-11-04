@@ -7,6 +7,7 @@ class SignalAudio {
   final SignalSettings settings;
   final bool enabled;
   AudioPlayer? _musicPlayer, _effectsPlayer, _howlPlayer, _heartbeatPlayer;
+  AudioPlayer? _magicPlayer;
   AudioPlayer get _music => _musicPlayer ??= AudioPlayer();
   AudioPlayer get _effects => _effectsPlayer ??= AudioPlayer();
   bool _playing = false;
@@ -62,6 +63,28 @@ class SignalAudio {
     }());
   }
 
+  /// Casting remains audible under gunfire and uses the same pause epoch as
+  /// other threat audio, so a late async load cannot start after leaving play.
+  void magic(String name) {
+    if (!enabled ||
+        !_wantedPlaying ||
+        settings.muted ||
+        settings.effects <= 0) {
+      return;
+    }
+    final epoch = _tensionEpoch;
+    unawaited(() async {
+      try {
+        final player = _magicPlayer ??= AudioPlayer();
+        await player.setVolume(settings.effects * .8);
+        if (!_wantedPlaying || settings.muted || epoch != _tensionEpoch) return;
+        await player.play(AssetSource('audio/$name.wav'));
+      } on Object {
+        /* Visual casting and projectile cues remain available. */
+      }
+    }());
+  }
+
   Future<void> tension({required bool playing, required bool critical}) async {
     if (!enabled) return;
     final volume = playing && critical && !settings.muted
@@ -104,6 +127,7 @@ class SignalAudio {
     try {
       await _howlPlayer?.stop();
       await _heartbeatPlayer?.stop();
+      await _magicPlayer?.stop();
     } on Object {
       /* Never block pausing because of audio. */
     }
@@ -129,5 +153,6 @@ class SignalAudio {
     unawaited(_effectsPlayer?.dispose());
     unawaited(_howlPlayer?.dispose());
     unawaited(_heartbeatPlayer?.dispose());
+    unawaited(_magicPlayer?.dispose());
   }
 }

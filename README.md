@@ -13,6 +13,12 @@ Mở http://127.0.0.1:8080. Dừng bản cũ bằng Ctrl+C trước khi chạy, 
 
 **Luật và điều khiển bản một map: [SINGLE_MAP.md](SINGLE_MAP.md).** Sống đủ 180 giây để thắng; ba lõi tín hiệu là mục tiêu phụ. Quái và người chơi đều có thể giết nhau. Chết có hoạt ảnh, nguyên nhân và nút chơi lại map, khôi phục tài nguyên đầu lượt.
 
+**Quái có ma lực tầm xa, người chơi chỉ dùng súng.** Kẻ gây nhiễu phóng cầu xanh; boss tung ba cầu tím rồi hở giáp. Có tụ phép, đường nhắm và tiếng báo trước; né ngang hoặc dùng vật chắn. Bắn trúng quái gây nhiễu lúc nó tụ phép sẽ ngắt đòn. Đã bỏ đèn chớp/bẫy điện khỏi bản chính. Vòng bàn tay dùng nạp đạn / ẩn / lướt né. Xem [luật ma lực](docs/COMBAT_MAGIC.md).
+
+**Trang bị và tương tác:** nhặt lục/trường/shotgun, **1/2/3** chọn hoặc **V** đổi súng, mỗi khẩu giữ đạn riêng. **I** mở túi, **H** băng bó 2,8 giây hồi 40 HP (tối đa ba túi máu). **E** đóng/mở cửa, lấy đồ; tìm chìa ở phố cổ để mở kho. Có phòng trú và cửa 120 độ bền bị quái phá được. Boss còn nửa máu chuyển giai đoạn hai, kết hợp cầu ma lực với hai vùng nổ báo trước. Vòng bàn tay có thêm hàng băng bó / đổi súng / tương tác. Xem [luật trang bị và boss](docs/SURVIVAL_SYSTEMS.md).
+
+**Hai tay / Webcam:** tay trái đi, tay phải ngắm/bắn đồng thời. Có cử chỉ trực tiếp đổi tư thế, đổi súng, nạp đạn, băng bó, ẩn và mở cửa; bảng 12 thao tác cũng chọn bằng tay. Mất một tay tự dừng, có thể tiếp tục/chơi lại bằng chụm thả. Xem [hướng dẫn hai tay](docs/TWO_HAND_CONTROLS.md). Sau khi cập nhật cần khởi động lại `npm run web` để Python nạp nhận diện hai tay.
+
 Map hiện rộng **4.400 × 3.600, gấp bốn diện tích cũ**, vẫn là một thị trấn liền mạch. **G** để ẩn nấp gần vòng xanh; **M** xem toàn khu vực. Có viền đỏ/nhịp tim khi ít máu, tiếng hú khi quái tới gần, quái tìm kiếm theo dấu và tiếng động, cùng các đợt mất điện. Các khu chợ đêm, sân đền và vườn hoang đi tới được ngay trong map này.
 
 **X** chuyển ngồi/đứng, **Z** chuyển nằm/đứng; có ba nút tư thế cho cảm ứng và một hàng tư thế trong vòng kỹ năng bàn tay. Cả ba tư thế đều bắn và thay đạn được. Ngồi tận dụng vật chắn thấp, nằm bò chậm và kín hơn trong bụi; từ nằm phải đứng dậy trước khi lướt. Hình ngồi/nằm dùng atlas riêng, xem chi tiết tại [SINGLE_MAP.md](SINGLE_MAP.md).

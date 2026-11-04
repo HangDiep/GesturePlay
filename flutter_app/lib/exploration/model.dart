@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'world.dart';
 import '../survival/rules.dart';
+import '../survival/gear.dart';
+export '../survival/gear.dart';
 
 enum FieldPhase { ready, playing, paused, won, lost }
 
@@ -32,14 +34,27 @@ class Creature {
       pathTimer = 0;
   double animation = 0, facing = 0;
   double windup = 0, strikeFor = 0;
+  double castFor = 0, magicCooldown = 0;
+  bool enraged = false;
+  double phaseFor = 0, zoneCooldown = 0;
+  int get bossPhase => enraged ? 2 : 1;
+  double get castDuration => kind == CreatureKind.boss && enraged
+      ? 1.05
+      : TownRules.magicWindup[magicTier];
+  Offset? castTarget;
   int attackId = 0;
+  bool get usesMagic =>
+      kind == CreatureKind.jammer || kind == CreatureKind.boss;
+  bool get casting => castFor > 0 && castTarget != null;
+  int get magicTier => kind == CreatureKind.boss ? 1 : 0;
   int pathStep = 0;
   List<Offset> path = [];
   Offset? investigate;
   double noiseFor = 0;
   bool get alive => health > 0;
   double get maxHealth => [45, 135, 70, 300][kind.index].toDouble();
-  double get speed => [125, 69, 96, 78][kind.index].toDouble();
+  double get speed =>
+      [125, 69, 96, 78][kind.index].toDouble() * (enraged ? 1.18 : 1);
   double get damage => [8, 17, 10, 32][kind.index].toDouble();
   double get radius => kind == CreatureKind.boss
       ? 23
@@ -51,10 +66,20 @@ class Creature {
 }
 
 class FieldBullet {
-  FieldBullet(this.position, this.direction, {this.lowShot = true});
+  FieldBullet(
+    this.position,
+    this.direction, {
+    this.lowShot = true,
+    this.damage = 28,
+    this.speed = 950,
+    this.life = .85,
+    this.shotId = 0,
+  });
   Offset position, direction;
   final bool lowShot;
-  double life = .85;
+  final double damage, speed;
+  final int shotId;
+  double life;
 }
 
 class FieldEffect {
@@ -71,12 +96,41 @@ class FieldEffect {
   final double maxLife;
 }
 
+/// Enemy-only projectile. Direction and damage are fixed at release; a volley
+/// shares one attack ID, so its three bolts cannot stack damage on one player.
+class EnemyMagicBolt {
+  EnemyMagicBolt(
+    this.position,
+    this.direction, {
+    required this.sourceId,
+    required this.attackId,
+    required this.boss,
+  }) : remaining = TownRules.magicRange[boss ? 1 : 0] + 60;
+  Offset position;
+  final Offset direction;
+  final int sourceId, attackId;
+  final bool boss;
+  double remaining;
+  double get radius => boss ? 12 : 9;
+  double get speed => TownRules.magicSpeed[boss ? 1 : 0];
+  double get damage => TownRules.magicDamage[boss ? 1 : 0];
+}
+
 class FieldItem {
   FieldItem(this.position, this.kind, {this.unlockAt = 0});
   final Offset position;
   final String kind;
   final double unlockAt;
   bool taken = false;
+}
+
+class BossRift {
+  BossRift(this.position, this.sourceId, this.attackId);
+  final Offset position;
+  final int sourceId, attackId;
+  double warning = 1.4, fade = .5;
+  bool detonated = false;
+  static const radius = 90.0;
 }
 
 class ExplorationModel {
@@ -88,8 +142,12 @@ class ExplorationModel {
       items.add(FieldItem(world.supplies[i], i == 0 ? 'health' : 'ammo'));
     }
     if (survival) {
+      flashes = traps = 0;
       message = 'Giữ tín hiệu 180 giây. Lõi tín hiệu là mục tiêu phụ.';
       items.addAll([
+        FieldItem(const Offset(1190, 1460), 'gun_pistol'),
+        FieldItem(const Offset(1200, 2070), 'gun_shotgun'),
+        FieldItem(const Offset(1260, 1670), 'key_armory'),
         FieldItem(const Offset(1250, 1440), 'health', unlockAt: 105),
         FieldItem(const Offset(840, 520), 'ammo', unlockAt: 105),
         FieldItem(const Offset(3110, 910), 'health'),
@@ -97,6 +155,10 @@ class ExplorationModel {
         FieldItem(const Offset(1240, 2570), 'ammo'),
         FieldItem(const Offset(3440, 2500), 'ammo'),
       ]);
+      world.stashes.first.rifleRounds = 24;
+      world.stashes.first.pistolRounds = 12;
+      world.stashes.first.shells = 0;
+      world.stashes.last.shotgunAvailable = true;
     }
   }
   final bool survival;
@@ -140,6 +202,24 @@ class ExplorationModel {
       flashes = 3,
       traps = 3;
   int shots = 0, hits = 0, soundSerial = 0, _id = 0;
+  GunKind weapon = GunKind.rifle;
+  final gunSlots = <GunKind, GunSlot>{
+    GunKind.pistol: GunSlot(),
+    GunKind.rifle: GunSlot(owned: true, ammo: 24, reserve: 120),
+    GunKind.shotgun: GunSlot(),
+  };
+  GunSpec get gun => GunSpec.of(weapon);
+  bool owns(GunKind kind) => gunSlots[kind]!.owned;
+  int magazineOf(GunKind kind) => kind == weapon ? ammo : gunSlots[kind]!.ammo;
+  int reserveOf(GunKind kind) =>
+      kind == weapon ? reserve : gunSlots[kind]!.reserve;
+  int medkits = 1;
+  static const medkitCapacity = 3, healDuration = 2.8;
+  double healFor = 0;
+  bool _healing = false;
+  bool get healing => _healing;
+  final keys = <String>{};
+  final _landedShots = <int>{};
   bool firing = false, sprinting = false;
   String sound = '',
       message = 'Tìm 3 lõi tín hiệu. Sống sót 3 phút để chờ cứu hộ.';
@@ -153,6 +233,14 @@ class ExplorationModel {
       blackoutFor = 0,
       _footstepCooldown = 0;
   int howlSerial = 0, _blackouts = 0;
+  int magicSerial = 0;
+  String magicSound = '';
+  final enemyBolts = <EnemyMagicBolt>[];
+  final bossRifts = <BossRift>[];
+  bool get magicThreat =>
+      enemies.any((e) => e.alive && e.casting) ||
+      enemyBolts.any((b) => (b.position - player).distance < 300) ||
+      bossRifts.any((r) => !r.detonated);
   bool running = false;
   PlayerStance stance = PlayerStance.standing,
       previousStance = PlayerStance.standing;
@@ -183,6 +271,7 @@ class ExplorationModel {
       return false;
     }
     previousStance = stance;
+    cancelHealing();
     stance = value;
     stanceFor =
         value == PlayerStance.prone || previousStance == PlayerStance.prone
@@ -223,7 +312,9 @@ class ExplorationModel {
       effects = <FieldEffect>[],
       items = <FieldItem>[];
   final pending = <CreatureKind>[];
-  final _lastDamageAttack = <int, int>{};
+  // Ranged volleys can arrive out of order relative to later melee attacks.
+  // Remember individual IDs, not only the highest ID seen for each source.
+  final _damageAttacks = <(int, int)>{};
   bool get active => phase == FieldPhase.playing;
   double get rescueIn =>
       math.max(0, (survival ? TownRules.duration : rescueAt) - elapsed);
@@ -331,7 +422,7 @@ class ExplorationModel {
     if (reloadFor > 0) {
       reloadFor = math.max(0, reloadFor - dt);
       if (reloadFor == 0) {
-        final count = math.min(24 - ammo, reserve);
+        final count = math.min((survival ? gun.magazine : 24) - ammo, reserve);
         ammo += count;
         reserve -= count;
       }
@@ -342,6 +433,10 @@ class ExplorationModel {
     if (!direction.dx.isFinite || !direction.dy.isFinite) {
       direction = Offset.zero;
     }
+    if (healing && (direction.distance > .1 || firing || rollFor > 0)) {
+      cancelHealing();
+    }
+    if (healing) healFor = math.max(0, healFor - dt);
     if (hidden && (direction.distance > .15 || firing || sprinting)) {
       leaveHiding();
     }
@@ -396,13 +491,23 @@ class ExplorationModel {
       if (!active) return;
     }
     _bullets(dt);
+    if (survival) _enemyMagic(dt);
+    if (survival && active) _updateRifts(dt);
+    if (!active) return;
     _effects(dt);
     enemies.removeWhere((e) => !e.alive && e.death <= 0);
     if (survival) _updateTension();
     for (final item in items.where((i) => !i.taken && elapsed >= i.unlockAt)) {
       if ((item.position - player).distance > 35 ||
-          item.kind == 'health' && health >= 100 ||
-          survival && item.kind == 'ammo' && reserve >= TownRules.reserveCap) {
+          item.kind == 'health' &&
+              (survival ? medkits >= medkitCapacity : health >= 100) ||
+          survival && item.kind == 'ammo' && reserve >= gun.reserveCap) {
+        continue;
+      }
+      if (item.kind.startsWith('gun_')) {
+        item.taken = pickupGun(
+          item.kind == 'gun_pistol' ? GunKind.pistol : GunKind.shotgun,
+        );
         continue;
       }
       item.taken = true;
@@ -411,17 +516,35 @@ class ExplorationModel {
           cores++;
           notice('Đã thu hồi lõi $cores/3.', 'click');
         case 'health':
-          health = math.min(100, health + 40);
-          notice('Đã hồi 40 máu.');
+          if (survival) {
+            medkits++;
+            notice('Đã cất túi máu. H để băng bó trong 2,8 giây.');
+          } else {
+            health = math.min(100, health + 40);
+            notice('Đã hồi 40 máu.');
+          }
         case 'ammo':
           reserve = survival
-              ? math.min(TownRules.reserveCap, reserve + 48)
+              ? math.min(gun.reserveCap, reserve + ammoBundle(weapon))
               : reserve + 48;
-          notice('Nhặt được 48 viên đạn.');
+          notice(
+            survival
+                ? 'Nhặt đạn cho ${gun.name.toLowerCase()}.'
+                : 'Nhặt được 48 viên đạn.',
+          );
+        case 'key_armory':
+          keys.add('armory');
+          notice('Nhặt chìa kho tiếp tế. Xem bản đồ để tìm kho.');
       }
     }
     if (world.hazards.any((r) => r.contains(player))) {
       hurt(9 * dt, isHazard: true, reason: 'Nhiễm độc môi trường');
+    }
+    if (active && healing && healFor == 0) {
+      _healing = false;
+      medkits--;
+      health = math.min(100, health + 40);
+      notice('Băng bó xong: +40 máu.');
     }
     if (survival && active && elapsed >= TownRules.duration) {
       elapsed = TownRules.duration;
@@ -490,13 +613,22 @@ class ExplorationModel {
     e.weak = math.max(0, e.weak - dt);
     e.attack = math.max(0, e.attack - dt);
     e.noiseFor = math.max(0, e.noiseFor - dt);
+    e.magicCooldown = math.max(0, e.magicCooldown - dt);
+    e.zoneCooldown = math.max(0, e.zoneCooldown - dt);
+    e.phaseFor = math.max(0, e.phaseFor - dt);
+    if (e.phaseFor > 0) return;
     if (e.stun > 0 || e.weak > 0) return;
     final distance = (player - e.position).distance;
     final clear = world.clearLine(e.position, player, 2);
     final sight = survival
         ? world.clearSight(e.position, player, lowProfile: lowProfile)
         : clear;
-    final sensedTarget = survival ? _huntTarget(e, distance, sight) : player;
+    var sensedTarget = survival ? _huntTarget(e, distance, sight) : player;
+    if (survival && e.casting) {
+      e.castFor = math.max(0, e.castFor - dt);
+      if (e.castFor == 0) _releaseMagic(e);
+      return;
+    }
     if (e.windup > 0) {
       e.windup = math.max(0, e.windup - dt);
       if (e.windup == 0) {
@@ -531,6 +663,28 @@ class ExplorationModel {
       }
       return;
     }
+    if (survival) {
+      for (final door in world.doors.where((d) => !d.open)) {
+        final inside = door.room.contains(e.position);
+        if (inside == door.room.contains(sensedTarget)) continue;
+        sensedTarget = door.rect.center + Offset(0, inside ? -85 : 85);
+        if ((e.position - door.rect.center).distance < e.radius + 74) {
+          if (e.attack == 0) {
+            door.health = math.max(0, door.health - e.damage);
+            e.attack = 1.3;
+            e.strikeFor = .25;
+            effects.add(FieldEffect(door.rect.center, 'door_hit', .25));
+            if (door.broken) {
+              world.setDoorOpen(door, true);
+              _refreshPaths();
+              notice('Cửa ${door.name.toLowerCase()} đã bị phá!', 'boss_slam');
+            }
+          }
+          return;
+        }
+        break;
+      }
+    }
     if ((!survival || e.huntState == HuntState.chase) &&
         clear &&
         distance < (e.kind == CreatureKind.boss ? 105 : e.radius + 24)) {
@@ -548,6 +702,66 @@ class ExplorationModel {
         }
       }
       return;
+    }
+    if (survival &&
+        e.kind == CreatureKind.boss &&
+        e.enraged &&
+        e.zoneCooldown == 0 &&
+        !e.casting &&
+        e.huntState == HuntState.chase &&
+        !hidden &&
+        clear &&
+        sight &&
+        distance < 620 &&
+        bossRifts.length <= 2) {
+      e.attackId++;
+      for (final p in [player, player + lastMove * 140]) {
+        if (world.walkable(p, 10) && world.clearLine(e.position, p, 2)) {
+          bossRifts.add(BossRift(p, e.id, e.attackId));
+        }
+      }
+      e.zoneCooldown = 6;
+      e.magicCooldown = math.max(e.magicCooldown, 1.6);
+      e.strikeFor = .35;
+      message = 'VẾT NỨT MA LỰC! Rời hai vòng đỏ trước khi chúng nổ.';
+      messageFor = 2;
+      _magicCue('magic_charge');
+      return;
+    }
+    if (survival &&
+        e.usesMagic &&
+        e.huntState == HuntState.chase &&
+        !hidden &&
+        clear &&
+        sight &&
+        distance >= 140 &&
+        distance <= TownRules.magicRange[e.magicTier]) {
+      if (e.magicCooldown == 0 &&
+          enemyBolts.length <= TownRules.maxEnemyBolts - 3 &&
+          enemies.where((e) => e.casting).length <
+              TownRules.maxCastingEnemies) {
+        e.attackId++;
+        e.castTarget = player;
+        e.castFor = e.castDuration;
+        e.facing = (player - e.position).direction;
+        message = e.kind == CreatureKind.boss
+            ? 'Vật chủ tụ ma lực — né loạt ba cầu tím!'
+            : 'Quái đang tụ ma lực — di chuyển ngang hoặc nấp sau vật chắn!';
+        messageFor = 1.7;
+        _magicCue('magic_charge');
+        return;
+      }
+      // The ranged creature keeps a firing distance between casts. It still
+      // approaches when too far away and can strike in melee when cornered.
+      if (e.kind == CreatureKind.jammer && distance < 365) {
+        final toward = (player - e.position) / distance;
+        final delta = distance < 220
+            ? -toward
+            : Offset(-toward.dy, toward.dx) * (e.id.isEven ? 1 : -1) * .32;
+        e.facing = toward.direction;
+        e.position = world.move(e.position, delta * e.speed * dt, e.radius);
+        return;
+      }
     }
     var target = sensedTarget;
     if (!survival &&
@@ -578,6 +792,136 @@ class ExplorationModel {
         e.radius,
       );
     }
+  }
+
+  void _magicCue(String name) {
+    magicSound = name;
+    magicSerial++;
+  }
+
+  void _cancelMagic(Creature e, {double cooldown = 1.5}) {
+    e.castFor = 0;
+    e.castTarget = null;
+    e.magicCooldown = math.max(e.magicCooldown, cooldown);
+  }
+
+  void _releaseMagic(Creature e) {
+    final target = e.castTarget;
+    e.castTarget = null;
+    final boss = e.kind == CreatureKind.boss;
+    final count = boss ? 3 : 1;
+    if (!active ||
+        !e.alive ||
+        e.stun > 0 ||
+        target == null ||
+        (target - e.position).distance < 1 ||
+        !world.clearLine(e.position, target, 12) ||
+        enemyBolts.length + count > TownRules.maxEnemyBolts) {
+      _cancelMagic(e);
+      return;
+    }
+    final angle = (target - e.position).direction;
+    for (final spread in boss ? const [-.19, 0.0, .19] : const [0.0]) {
+      final direction = Offset(
+        math.cos(angle + spread),
+        math.sin(angle + spread),
+      );
+      enemyBolts.add(
+        EnemyMagicBolt(
+          e.position + direction * 8,
+          direction,
+          sourceId: e.id,
+          attackId: e.attackId,
+          boss: boss,
+        ),
+      );
+    }
+    e.magicCooldown =
+        (e.enraged ? 4.8 : TownRules.magicCooldown[e.magicTier]) +
+        (e.id % 3) * .15;
+    e.strikeFor = .3;
+    if (boss) {
+      e.weak = 2.4;
+      message = 'Boss vừa tung phép, giáp đã hở — bắn ngay!';
+      messageFor = 2.4;
+    }
+    effects.add(FieldEffect(e.position, 'magic_release', .35));
+    _magicCue('magic_cast');
+  }
+
+  void _enemyMagic(double dt) {
+    for (final bolt in enemyBolts) {
+      final travel = math.min(bolt.remaining, bolt.speed * dt);
+      final next = bolt.position + bolt.direction * travel;
+      var nearest = 1.0;
+      var blocked = false;
+      for (final wall in world.obstacles) {
+        final t = segmentRect(bolt.position, next, wall.inflate(bolt.radius));
+        if (t != null && t <= nearest) {
+          nearest = t;
+          blocked = true;
+        }
+      }
+      final hit = _circleHit(bolt.position, next, player, 16 + bolt.radius);
+      final hitsPlayer =
+          hit != null && (!blocked ? hit <= nearest : hit < nearest);
+      if (hitsPlayer) nearest = hit;
+      bolt.position += (next - bolt.position) * nearest;
+      bolt.remaining -= travel;
+      if (hitsPlayer || blocked) {
+        bolt.remaining = 0;
+        effects.add(FieldEffect(bolt.position, 'magic_impact', .35));
+        if (hitsPlayer) {
+          final before = health;
+          hurt(
+            bolt.damage,
+            sourceId: bolt.sourceId,
+            attackId: bolt.attackId,
+            reason: bolt.boss
+                ? 'Trúng ma lực của Vật chủ'
+                : 'Trúng cầu ma lực của Kẻ gây nhiễu',
+          );
+          if (health < before) _magicCue('magic_hit');
+          if (!active) return;
+        }
+      }
+    }
+    enemyBolts.removeWhere((b) => b.remaining <= 0);
+  }
+
+  void _updateRifts(double dt) {
+    for (final rift in bossRifts) {
+      Creature? owner;
+      for (final e in enemies) {
+        if (e.id == rift.sourceId && e.alive) owner = e;
+      }
+      if (owner == null) {
+        rift.fade = 0;
+        continue;
+      }
+      if (rift.detonated) {
+        rift.fade = math.max(0, rift.fade - dt);
+        continue;
+      }
+      rift.warning = math.max(0, rift.warning - dt);
+      if (rift.warning == 0) {
+        rift.detonated = true;
+        owner.weak = math.max(owner.weak, 1.5);
+        effects.add(FieldEffect(rift.position, 'rift_blast', .5));
+        if ((player - rift.position).distance <= BossRift.radius &&
+            world.clearLine(rift.position, player, 2)) {
+          hurt(
+            24,
+            sourceId: rift.sourceId,
+            attackId: rift.attackId,
+            reason: 'Bị vùng nổ ma lực giai đoạn hai của Vật chủ',
+          );
+          if (!active) return;
+        }
+        _magicCue('magic_hit');
+      }
+    }
+    bossRifts.removeWhere((r) => r.fade <= 0);
   }
 
   Offset _huntTarget(Creature e, double distance, bool clear) {
@@ -701,15 +1045,228 @@ class ExplorationModel {
     }
   }
 
+  static int ammoBundle(GunKind kind) => const [24, 48, 8][kind.index];
+
+  int addAmmo(GunKind kind, int amount) {
+    if (!owns(kind) || amount <= 0) return 0;
+    final count = math.min(
+      amount,
+      math.max(0, GunSpec.of(kind).reserveCap - reserveOf(kind)),
+    );
+    if (kind == weapon) {
+      reserve += count;
+    } else {
+      gunSlots[kind]!.reserve += count;
+    }
+    return count;
+  }
+
+  bool pickupGun(GunKind kind) {
+    if (!survival || !active) return false;
+    final slot = gunSlots[kind]!;
+    if (slot.owned) {
+      final count = addAmmo(kind, ammoBundle(kind));
+      if (count == 0) return false;
+    } else {
+      slot.owned = true;
+      slot.ammo = GunSpec.of(kind).magazine;
+      slot.reserve = const [36, 72, 12][kind.index];
+    }
+    notice(
+      'Nhặt ${GunSpec.of(kind).name.toLowerCase()}. Phím ${kind.index + 1} để trang bị.',
+    );
+    return true;
+  }
+
+  bool switchWeapon(GunKind kind) {
+    if (!survival || !active || !owns(kind) || weapon == kind) return false;
+    cancelHealing();
+    gunSlots[weapon]!
+      ..ammo = ammo
+      ..reserve = reserve;
+    weapon = kind;
+    ammo = gunSlots[kind]!.ammo;
+    reserve = gunSlots[kind]!.reserve;
+    reloadFor = 0;
+    shotCooldown = math.max(shotCooldown, .2);
+    notice('Trang bị ${gun.name.toLowerCase()}.');
+    return true;
+  }
+
+  bool cycleWeapon() {
+    for (var i = 1; i < 3; i++) {
+      final next = GunKind.values[(weapon.index + i) % 3];
+      if (owns(next)) return switchWeapon(next);
+    }
+    notice('Nhặt thêm súng để đổi vũ khí.');
+    return false;
+  }
+
+  bool useMedkit() {
+    if (!survival ||
+        !active ||
+        healing ||
+        medkits <= 0 ||
+        health >= 100 ||
+        rollFor > 0 ||
+        stanceFor > 0) {
+      return false;
+    }
+    movement = Offset.zero;
+    firing = sprinting = false;
+    reloadFor = 0;
+    _healing = true;
+    healFor = healDuration;
+    notice('Đang băng bó. Giữ yên; di chuyển, bắn hoặc trúng đòn sẽ ngắt.');
+    return true;
+  }
+
+  void cancelHealing() {
+    _healing = false;
+    healFor = 0;
+  }
+
+  TownDoor? get nearbyDoor {
+    TownDoor? nearest;
+    var distance = 105.0;
+    for (final d in world.doors) {
+      final dd = (d.rect.center - player).distance;
+      if (dd < distance &&
+          !world.obstacles
+              .where((r) => r != d.rect)
+              .any(
+                (r) => segmentRect(player, d.rect.center, r.inflate(1)) != null,
+              )) {
+        nearest = d;
+        distance = dd;
+      }
+    }
+    return nearest;
+  }
+
+  TownStash? get nearbyStash {
+    for (final s in world.stashes) {
+      if (!s.empty &&
+          (s.position - player).distance < 80 &&
+          world.clearLine(player, s.position, 2)) {
+        return s;
+      }
+    }
+    return null;
+  }
+
+  String? get interactionLabel {
+    final s = nearbyStash;
+    if (s != null) {
+      return 'E · ${s.opened ? 'NHẶT TIẾP' : 'MỞ'} ${s.name.toUpperCase()}';
+    }
+    final d = nearbyDoor;
+    if (d == null) return null;
+    return d.broken
+        ? 'CỬA ĐÃ VỠ'
+        : d.locked
+        ? (keys.contains('armory') ? 'E · MỞ KHÓA KHO' : 'E · CẦN CHÌA KHO')
+        : 'E · ${d.open ? 'ĐÓNG' : 'MỞ'} CỬA ${d.name}';
+  }
+
+  void _refreshPaths() {
+    for (final e in enemies) {
+      e.path.clear();
+      e.pathStep = 0;
+      e.pathTimer = 0;
+    }
+  }
+
+  bool interact() {
+    if (!survival || !active) return false;
+    final stash = nearbyStash;
+    if (stash != null) {
+      cancelHealing();
+      var taken = 0;
+      if (stash.shotgunAvailable && !owns(GunKind.shotgun)) {
+        pickupGun(GunKind.shotgun);
+        stash.shotgunAvailable = false;
+        taken++;
+      }
+      if (stash.shotgunAvailable && owns(GunKind.shotgun)) {
+        final rounds = addAmmo(GunKind.shotgun, 6);
+        if (rounds > 0) {
+          stash.shotgunAvailable = false;
+          taken++;
+        }
+      }
+      final meds = math.min(
+        math.max(0, medkitCapacity - medkits),
+        stash.medStock,
+      );
+      medkits += meds;
+      stash.medStock -= meds;
+      taken += meds;
+      var count = addAmmo(GunKind.rifle, stash.rifleRounds);
+      stash.rifleRounds -= count;
+      taken += count;
+      count = addAmmo(GunKind.pistol, stash.pistolRounds);
+      stash.pistolRounds -= count;
+      taken += count;
+      count = addAmmo(GunKind.shotgun, stash.shells);
+      stash.shells -= count;
+      taken += count;
+      if (taken == 0) {
+        notice('Túi đang đầy. Phần tiếp tế còn lại được giữ trong hòm.');
+        return false;
+      }
+      stash.opened = true;
+      notice('Đã lấy tiếp tế. Đạn/túi máu còn dư vẫn ở trong hòm.');
+      return true;
+    }
+    final door = nearbyDoor;
+    if (door == null) return false;
+    if (door.broken) {
+      notice('Cửa đã vỡ, không thể đóng lại.');
+      return false;
+    }
+    if (door.locked) {
+      if (!keys.remove('armory')) {
+        notice('Cần chìa kho tiếp tế: tìm ở phố cổ.');
+        return false;
+      }
+      door.locked = false;
+    }
+    if (door.open &&
+        (door.rect.inflate(23).contains(player) ||
+            enemies.any(
+              (e) =>
+                  e.alive &&
+                  door.rect.inflate(e.radius + 3).contains(e.position),
+            ))) {
+      notice('Lối cửa đang có người/quái. Lùi ra trước khi đóng.');
+      return false;
+    }
+    cancelHealing();
+    world.setDoorOpen(door, !door.open);
+    _refreshPaths();
+    notice(
+      '${door.open ? 'Đã mở' : 'Đã đóng'} cửa ${door.name.toLowerCase()}.',
+    );
+    return true;
+  }
+
   void reload() {
-    if (!active || reloadFor > 0 || ammo >= 24 || reserve <= 0) return;
-    reloadFor = 1.65;
+    if (!active ||
+        reloadFor > 0 ||
+        ammo >= (survival ? gun.magazine : 24) ||
+        reserve <= 0) {
+      return;
+    }
+    cancelHealing();
+    reloadFor = survival ? gun.reloadSeconds : 1.65;
     notice('Đang thay đạn…');
   }
 
   bool roll() {
     if (!active || rollCooldown > 0 || stamina < 25) return false;
     if (stanceFor > 0) return false;
+    cancelHealing();
     if (survival && stance == PlayerStance.prone) {
       setStance(PlayerStance.standing);
       notice('Đang đứng dậy. Bấm Space lần nữa để lướt khi đã đứng.');
@@ -742,19 +1299,31 @@ class ExplorationModel {
     }
     final direction = target - player;
     if (direction.distance < 1) return false;
+    cancelHealing();
     final unit = direction / direction.distance;
     leaveHiding();
     ammo--;
     shots++;
-    shotCooldown = .18;
+    shotCooldown = survival ? gun.interval : .18;
     // Start inside the player's circle so walls next to the muzzle also block bullets.
-    bullets.add(
-      FieldBullet(
-        player + unit * 10,
-        unit,
-        lowShot: !survival || stance == PlayerStance.prone,
-      ),
-    );
+    final pellets = survival ? gun.pellets : 1;
+    for (var i = 0; i < pellets; i++) {
+      final angle =
+          unit.direction +
+          (pellets == 1 ? 0 : (i / (pellets - 1) * 2 - 1) * gun.spread);
+      final ray = Offset(math.cos(angle), math.sin(angle));
+      bullets.add(
+        FieldBullet(
+          player + ray * 10,
+          ray,
+          lowShot: !survival || stance == PlayerStance.prone,
+          damage: survival ? gun.damage : 28,
+          speed: survival ? gun.speed : 950,
+          life: survival ? gun.range / gun.speed : .85,
+          shotId: shots,
+        ),
+      );
+    }
     if (survival) exposedFor = .6;
     effects.add(
       FieldEffect(player + unit * 28, 'muzzle', .07, direction: unit),
@@ -776,7 +1345,8 @@ class ExplorationModel {
 
   void _bullets(double dt) {
     for (final bullet in bullets) {
-      final next = bullet.position + bullet.direction * 950 * dt;
+      final flight = math.min(dt, bullet.life);
+      final next = bullet.position + bullet.direction * bullet.speed * flight;
       var nearest = 1.0;
       Creature? target;
       var blocked = false;
@@ -801,8 +1371,8 @@ class ExplorationModel {
       bullet.position += (next - bullet.position) * nearest;
       bullet.life -= dt;
       if (target != null && !blocked) {
-        hit(target, 28);
-        hits++;
+        hit(target, bullet.damage);
+        if (bullet.shotId == 0 || _landedShots.add(bullet.shotId)) hits++;
         bullet.life = 0;
       } else if (blocked) {
         effects.add(FieldEffect(bullet.position, 'spark', .2));
@@ -817,6 +1387,22 @@ class ExplorationModel {
     final armored = e.kind == CreatureKind.boss && e.weak <= 0;
     final damage = armored ? amount / 3 : amount;
     e.health = math.max(0, e.health - damage);
+    if (survival &&
+        e.alive &&
+        e.kind == CreatureKind.boss &&
+        !e.enraged &&
+        e.health <= e.maxHealth * .5) {
+      e.enraged = true;
+      e.phaseFor = 1.2;
+      e.zoneCooldown = .8;
+      e.castFor = e.charge = e.windup = 0;
+      e.castTarget = null;
+      e.magicCooldown = math.max(e.magicCooldown, 1);
+      notice(
+        'BOSS GIAI ĐOẠN 2! Canh vòng đỏ, né rồi phản công.',
+        'boss_charge',
+      );
+    }
     e.hit = .25;
     effects.add(
       FieldEffect(
@@ -829,15 +1415,20 @@ class ExplorationModel {
     if (!e.alive) {
       e.death = .85;
       e.charge = e.stun = e.weak = e.windup = 0;
+      e.castFor = 0;
+      e.castTarget = null;
       kills++;
       sound = 'kill';
       soundSerial++;
+    } else if (survival && e.casting && e.kind != CreatureKind.boss) {
+      _cancelMagic(e, cooldown: 2);
+      effects.add(FieldEffect(e.position, 'magic_impact', .25));
     }
     return damage;
   }
 
   bool flash() {
-    if (!active || flashes <= 0 || flashCooldown > 0) return false;
+    if (survival || !active || flashes <= 0 || flashCooldown > 0) return false;
     flashes--;
     flashCooldown = 6;
     flashFor = .22;
@@ -856,11 +1447,12 @@ class ExplorationModel {
     e.stun = math.max(e.stun, seconds);
     e.charge = 0;
     e.windup = 0;
+    _cancelMagic(e);
     e.attack = math.max(e.attack, 1);
   }
 
   bool trap() {
-    if (!active || traps <= 0 || trapCooldown > 0) return false;
+    if (survival || !active || traps <= 0 || trapCooldown > 0) return false;
     traps--;
     trapCooldown = 3;
     effects.add(FieldEffect(player, 'trap', 20));
@@ -886,6 +1478,7 @@ class ExplorationModel {
   }
 
   void _stopCombatInput() {
+    cancelHealing();
     firing = sprinting = false;
     movement = Offset.zero;
     reloadFor = rollFor = 0;
@@ -900,11 +1493,11 @@ class ExplorationModel {
   }) {
     if (!active || !amount.isFinite || amount <= 0) return;
     if (sourceId != null && attackId != null) {
-      if ((_lastDamageAttack[sourceId] ?? -1) >= attackId) return;
-      _lastDamageAttack[sourceId] = attackId;
+      if (!_damageAttacks.add((sourceId, attackId))) return;
     }
     if (!isHazard && rollFor > 0) return;
     if (!isHazard && invulnerableFor > 0) return;
+    cancelHealing();
     health = math.max(0, health - amount);
     if (hidden) leaveHiding();
     hurtFor = .35;

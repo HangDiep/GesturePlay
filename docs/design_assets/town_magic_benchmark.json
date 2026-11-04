@@ -1,0 +1,16 @@
+{
+  "platform": "windows",
+  "mode": "profile",
+  "render_layer": "full",
+  "duration_seconds": 10,
+  "ticker_frames": 414,
+  "ticker_fps": 41.4,
+  "timing_samples": 417,
+  "build_p95_ms": 6.71,
+  "raster_p95_ms": 39.27,
+  "live_enemies": 9,
+  "webcam": false,
+  "logical_view": "1265x682",
+  "device_pixel_ratio": 1.25,
+  "notes": "Native profile run with 9 AI enemies, gun effects, rain, fog, lanterns and camera movement. Excludes webcam recognition and browser overhead."
+}
