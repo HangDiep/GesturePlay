@@ -1,0 +1,8 @@
+{
+  "jdk.jdkhome": "D:\\android\\android_A\\jbr",
+  "java.jdt.ls.java.home": "D:\\android\\android_A\\jbr",
+  "terminal.integrated.env.windows": {
+    "JAVA_HOME": "D:\\android\\android_A\\jbr",
+    "PATH": "D:\\android\\android_A\\jbr\\bin;D:\\android\\flutter_windows_3.44.9-stable\\flutter\\bin;${env:PATH}"
+  }
+}

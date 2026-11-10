@@ -134,9 +134,14 @@ class BossRift {
 }
 
 class ExplorationModel {
-  ExplorationModel(FieldMap map, {int seed = 42, this.survival = false})
-    : world = FieldWorld(map, quarantine: survival),
-      random = math.Random(seed) {
+  ExplorationModel(
+    FieldMap map, {
+    int seed = 42,
+    this.survival = false,
+    this.difficulty = TownDifficulty.normal,
+    this.practice = false,
+  }) : world = FieldWorld(map, quarantine: survival),
+       random = math.Random(seed) {
     items.addAll(world.cores.map((p) => FieldItem(p, 'core')));
     for (var i = 0; i < world.supplies.length; i++) {
       items.add(FieldItem(world.supplies[i], i == 0 ? 'health' : 'ammo'));
@@ -159,9 +164,26 @@ class ExplorationModel {
       world.stashes.first.pistolRounds = 12;
       world.stashes.first.shells = 0;
       world.stashes.last.shotgunAvailable = true;
+      if (practice) {
+        wave = 5;
+        medkits = 3;
+        pickupPracticeGuns();
+      }
     }
   }
   final bool survival;
+  final bool practice;
+  final TownDifficulty difficulty;
+  Offset? practiceTarget;
+  void pickupPracticeGuns() {
+    for (final kind in GunKind.values) {
+      gunSlots[kind]!
+        ..owned = true
+        ..ammo = GunSpec.of(kind).magazine
+        ..reserve = GunSpec.of(kind).reserveCap;
+    }
+  }
+
   final FieldWorld world;
   final math.Random random;
   static const waveTimes = [3.0, 27.0, 55.0, 88.0, 120.0];
@@ -316,8 +338,9 @@ class ExplorationModel {
   // Remember individual IDs, not only the highest ID seen for each source.
   final _damageAttacks = <(int, int)>{};
   bool get active => phase == FieldPhase.playing;
-  double get rescueIn =>
-      math.max(0, (survival ? TownRules.duration : rescueAt) - elapsed);
+  double get rescueIn => practice
+      ? TownRules.duration
+      : math.max(0, (survival ? TownRules.duration : rescueAt) - elapsed);
   String get objective => survival
       ? 'Sống sót ${rescueIn.ceil()} giây • Lõi tín hiệu tùy chọn $cores/3'
       : cores < 3
@@ -334,12 +357,13 @@ class ExplorationModel {
         e.stun <= 0 &&
         (e.position - player).distance < 310,
   );
-  int get score =>
-      cores * 300 +
-      kills * 100 +
-      (phase == FieldPhase.won
-          ? (survival ? 1500 : 1000) + health.floor() * 5
-          : 0);
+  int get score => practice
+      ? 0
+      : cores * 300 +
+            kills * 100 +
+            (phase == FieldPhase.won
+                ? (survival ? 1500 : 1000) + health.floor() * 5
+                : 0);
 
   void notice(String value, [String effect = 'click']) {
     message = value;
@@ -410,7 +434,9 @@ class ExplorationModel {
           notice('Bạn phải rời chỗ ẩn để lấy hơi! Đổi vị trí ngay.', 'alarm');
         }
       }
-      if (_blackouts < 2 && elapsed >= (_blackouts == 0 ? 52 : 128)) {
+      if (!practice &&
+          _blackouts < 2 &&
+          elapsed >= (_blackouts == 0 ? 52 : 128)) {
         _blackouts++;
         blackoutFor = 14;
         notice(
@@ -546,7 +572,7 @@ class ExplorationModel {
       health = math.min(100, health + 40);
       notice('Băng bó xong: +40 máu.');
     }
-    if (survival && active && elapsed >= TownRules.duration) {
+    if (survival && !practice && active && elapsed >= TownRules.duration) {
       elapsed = TownRules.duration;
       phase = FieldPhase.won;
       _stopCombatInput();
@@ -670,7 +696,10 @@ class ExplorationModel {
         sensedTarget = door.rect.center + Offset(0, inside ? -85 : 85);
         if ((e.position - door.rect.center).distance < e.radius + 74) {
           if (e.attack == 0) {
-            door.health = math.max(0, door.health - e.damage);
+            door.health = math.max(
+              0,
+              door.health - e.damage * difficulty.damageScale,
+            );
             e.attack = 1.3;
             e.strikeFor = .25;
             effects.add(FieldEffect(door.rect.center, 'door_hit', .25));
@@ -759,7 +788,11 @@ class ExplorationModel {
             ? -toward
             : Offset(-toward.dy, toward.dx) * (e.id.isEven ? 1 : -1) * .32;
         e.facing = toward.direction;
-        e.position = world.move(e.position, delta * e.speed * dt, e.radius);
+        e.position = world.move(
+          e.position,
+          delta * e.speed * difficulty.speedScale * dt,
+          e.radius,
+        );
         return;
       }
     }
@@ -788,7 +821,9 @@ class ExplorationModel {
       e.facing = math.atan2(delta.dy, delta.dx);
       e.position = world.move(
         e.position,
-        delta / delta.distance * math.min(delta.distance, e.speed * dt),
+        delta /
+            delta.distance *
+            math.min(delta.distance, e.speed * difficulty.speedScale * dt),
         e.radius,
       );
     }
@@ -1491,7 +1526,8 @@ class ExplorationModel {
     int? sourceId,
     int? attackId,
   }) {
-    if (!active || !amount.isFinite || amount <= 0) return;
+    if (practice || !active || !amount.isFinite || amount <= 0) return;
+    if (survival) amount *= difficulty.damageScale;
     if (sourceId != null && attackId != null) {
       if (!_damageAttacks.add((sourceId, attackId))) return;
     }

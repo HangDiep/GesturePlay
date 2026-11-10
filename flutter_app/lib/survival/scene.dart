@@ -36,6 +36,16 @@ class TownPainter extends CustomPainter {
     c.translate(-view.origin.dx, -view.origin.dy);
     _ground(c, view);
     _roomFloors(c, view);
+    if (model.practiceTarget case final target?) {
+      _groundRing(c, target, 32, cyan.withValues(alpha: .9), 2);
+      _label(
+        c,
+        'MỤC TIÊU THỰC HÀNH',
+        _floor(target) + const Offset(0, 42),
+        cyan,
+        10,
+      );
+    }
     _lamps(c, view);
     _magicTelegraphs(c, view);
     _riftWarnings(c, view);

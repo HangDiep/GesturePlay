@@ -86,6 +86,24 @@ class DualGestureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.calibration_targets({'target':'invalid'})
 
+    def test_packet_exposes_calibration_status_for_each_physical_hand(self):
+        service = HandServer()
+        def sample(t):
+            now = int(t * 1e9)
+            hand = HandResult(int(t*1000), int(t*1000), now, now, .75,.5,.9,
+                              hands=(TrackedHand('left',.25,.5,.7,((.2,.5),(.3,.5))),
+                                     TrackedHand('right',.75,.5,.9,((.7,.5),(.8,.5)))))
+            return service.two_hand_packet(hand, now, True)
+        for t in (1, 1.1, 1.2, 1.3):
+            sample(t)
+        self.assertTrue(service.hand_controllers['left'].calibrate_open(1_300_000_000))
+        packet = sample(1.35)
+        self.assertEqual(packet['left']['calibration_stage'], 'opened')
+        self.assertIn('Đã ghi tay mở', packet['left']['calibration_message'])
+        self.assertEqual(packet['right']['calibration_stage'], 'none')
+        self.assertAlmostEqual(packet['left']['ratio'], .7)
+        self.assertAlmostEqual(packet['right']['ratio'], .9)
+
 
 if __name__ == '__main__':
     unittest.main()

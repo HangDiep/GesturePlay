@@ -55,7 +55,7 @@ try {
   await requireFreePort(8080);
   await requireFreePort(handPort);
   if (clearCache) {
-    console.log('Đang xóa bộ nhớ đệm biên dịch Flutter; thành tích vẫn được giữ.');
+    console.log('Đang xóa bộ nhớ đệm biên dịch Flutter. Lịch sử trải nghiệm sẽ bắt đầu lại khi mở ứng dụng.');
     setup = startFlutter(flutterPath, ['clean']);
     if (await waitForExit(setup) !== 0) throw new Error('Không làm sạch được bộ nhớ đệm Flutter.');
   }

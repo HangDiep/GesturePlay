@@ -137,6 +137,10 @@ class HandServer:
                 'palm_y': finite(observation.palm_y) if observation else None,
                 'pinch_points': observation.pinch_points if observation and g.valid else None,
                 'reason': g.reason,
+                'ratio': g.ratio, 'press_threshold': g.press_threshold,
+                'release_threshold': g.release_threshold,
+                'calibration_stage': g.calibration_stage,
+                'calibration_message': g.calibration_message,
             }
         return result
 

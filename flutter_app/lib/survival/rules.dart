@@ -1,5 +1,13 @@
 /// Rules for the single playable town. The previous map prototypes keep their
 /// own rescue rules and are not part of the new home screen.
+enum TownDifficulty { easy, normal }
+
+extension TownDifficultyText on TownDifficulty {
+  String get label => this == TownDifficulty.easy ? 'Dễ' : 'Thường';
+  double get speedScale => this == TownDifficulty.easy ? .78 : 1;
+  double get damageScale => this == TownDifficulty.easy ? .7 : 1;
+}
+
 abstract final class TownRules {
   static const duration = 180.0;
   static const maxAlive = 9;

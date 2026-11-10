@@ -4,6 +4,7 @@
   "private": true,
   "description": "GesturePlay 2D game in Flutter with local Python hand recognition",
   "scripts": {
+    "android": "node scripts/run-android.mjs",
     "web": "node scripts/run-web.mjs",
     "windows": "node scripts/run-windows.mjs"
   },

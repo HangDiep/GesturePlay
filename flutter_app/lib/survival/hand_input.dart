@@ -7,6 +7,7 @@ import 'view.dart';
 /// movement, aim and exclusive release gestures independent.
 class TownHandInput {
   bool twoHands = false, swapHands = false;
+  double movementSensitivity = 1, pointerSensitivity = 1;
   Offset? aimCenter, _aimDirection;
   double _leftFistFor = 0,
       _rightFistFor = 0,
@@ -184,12 +185,14 @@ class TownHandInput {
     model.sprinting = false;
     model.movement = hand.pinched
         ? Offset.zero
-        : TownView.movement(direction / .16);
+        : TownView.movement(direction * movementSensitivity / .16);
     model.firing = hand.pinched;
     if (hand.pinched && direction.distance > .018) {
       model.aim =
           model.player +
-          TownView.movement(direction / direction.distance) * 400;
+          TownView.movement(direction / direction.distance) *
+              400 *
+              pointerSensitivity;
     }
   }
 
@@ -428,7 +431,7 @@ class TownHandInput {
       double dead(double v) => v.abs() <= .04 ? 0 : v.sign * (v.abs() - .04);
       final delta = lp - center!;
       m.movement = TownView.movement(
-        Offset(dead(delta.dx), dead(delta.dy)) / .16,
+        Offset(dead(delta.dx), dead(delta.dy)) * movementSensitivity / .16,
       );
       if (hand.latest!.sequence != _sequence) {
         final age = _time - _sampleAt;
@@ -462,7 +465,9 @@ class TownHandInput {
       if (delta.distance > .04) {
         _aimDirection = TownView.movement(delta / delta.distance);
       }
-      m.aim = m.player + (_aimDirection ?? const Offset(0, -1)) * 500;
+      m.aim =
+          m.player +
+          (_aimDirection ?? const Offset(0, -1)) * 500 * pointerSensitivity;
       m.firing = right.flag('pinched');
     }
   }

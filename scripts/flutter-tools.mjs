@@ -15,10 +15,14 @@ export function findFlutter() {
     encoding: 'utf8', windowsHide: true,
   });
   if (located.status === 0) candidates.push(...located.stdout.trim().split(/\r?\n/));
-  const downloads = join(homedir(), 'Downloads');
-  if (existsSync(downloads)) {
-    for (const name of readdirSync(downloads).filter(n => n.startsWith('flutter_windows_')).sort().reverse()) {
-      candidates.push(join(downloads, name, 'flutter', 'bin', executable));
+  const sdkFolders = [join(homedir(), 'Downloads')];
+  if (process.platform === 'win32') {
+    sdkFolders.push('C:/android', 'D:/android');
+  }
+  for (const folder of sdkFolders) {
+    if (!existsSync(folder)) continue;
+    for (const name of readdirSync(folder).filter(n => n.startsWith('flutter_windows_')).sort().reverse()) {
+      candidates.push(join(folder, name, 'flutter', 'bin', executable));
     }
   }
   const flutter = candidates.find(path => existsSync(path));

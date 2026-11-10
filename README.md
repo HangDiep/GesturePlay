@@ -11,6 +11,10 @@ npm run web
 
 Mở http://127.0.0.1:8080. Dừng bản cũ bằng Ctrl+C trước khi chạy, Ctrl+F5 nếu trình duyệt còn hiển thị bản trước. Giữ terminal mở. Để chạy cửa sổ Windows, dùng `npm run windows` hoặc nhấp đúp `Chay_GesturePlay.bat`.
 
+**Giao diện ứng dụng mới:** bắt đầu ở màn đăng nhập/đăng ký. Chọn **TRẢI NGHIỆM GIAO DIỆN** để vào game khi chưa có database. Trang chính có Hồ sơ, Lịch sử, Kết nối tay và Thực hành 11 bài; có độ khó Dễ/Thường. Xem [phạm vi và cách dùng](docs/APP_PORTAL_UI.md). Hồ sơ và kết quả thử chỉ giữ trong phiên; đăng nhập online sẽ được ghép sau khi có URL/key.
+
+**Kết quả & lịch sử cá nhân:** xem chi tiết từng lượt, tài nguyên cuối lượt và thống kê theo Dễ/Thường. Đã chuẩn bị trạng thái lưu, hàng chờ theo tài khoản và gửi lại bằng cùng mã lượt để tránh trùng; lưu online chờ cấu hình dịch vụ thật. Xem [chi tiết mục 3.11](docs/RESULTS_HISTORY.md).
+
 **Luật và điều khiển bản một map: [SINGLE_MAP.md](SINGLE_MAP.md).** Sống đủ 180 giây để thắng; ba lõi tín hiệu là mục tiêu phụ. Quái và người chơi đều có thể giết nhau. Chết có hoạt ảnh, nguyên nhân và nút chơi lại map, khôi phục tài nguyên đầu lượt.
 
 **Quái có ma lực tầm xa, người chơi chỉ dùng súng.** Kẻ gây nhiễu phóng cầu xanh; boss tung ba cầu tím rồi hở giáp. Có tụ phép, đường nhắm và tiếng báo trước; né ngang hoặc dùng vật chắn. Bắn trúng quái gây nhiễu lúc nó tụ phép sẽ ngắt đòn. Đã bỏ đèn chớp/bẫy điện khỏi bản chính. Vòng bàn tay dùng nạp đạn / ẩn / lướt né. Xem [luật ma lực](docs/COMBAT_MAGIC.md).
@@ -26,6 +30,21 @@ Map hiện rộng **4.400 × 3.600, gấp bốn diện tích cũ**, vẫn là m�
 Bản thiết kế nguồn: [Thiet_ke_hoan_thien_GesturePlay123.docx](Thiet_ke_hoan_thien_GesturePlay123.docx). Bản chơi hiện tại áp dụng màn phố cùng các luật chiến đấu, chết, kỹ năng và đồ họa. Chiến dịch bốn màn và đi cảnh ngang trong tài liệu được thu gọn theo yêu cầu chỉ chơi một map.
 
 ## Chuẩn bị môi trường Windows
+
+Chạy Android giả lập bằng một lệnh tại thư mục dự án:
+
+```powershell
+cd D:\GesturePlay
+npm run android
+```
+
+Lệnh tự tìm SDK/Flutter, mở Pixel_10_Pro_XL (hoặc giả lập duy nhất), chờ Android khởi động rồi chạy game bằng mã thiết bị thực tế. Giữ cửa sổ giả lập mở khi chơi. Nếu đã có giả lập đang online, lệnh dùng luôn thiết bị đó. Có thể chọn AVD bằng `npm run android -- --avd Ten_gia_lap`. Cần cài Android SDK, Emulator và tạo AVD trong Android Studio trước. Nhận diện tay vẫn cần Python trên laptop như [hướng dẫn Android](docs/DEAD_SIGNAL_CAMERA.md).
+
+Bộ khởi chạy bỏ qua snapshot cũ và không gửi báo lỗi của giả lập, tránh hộp thoại báo crash cũ chặn khởi động. Nếu gặp lỗi GPU, thử `npm run android -- --gpu swiftshader` để dùng đồ họa phần mềm và tắt Vulkan; có thể chậm hơn GPU phần cứng. Các tùy chọn chỉ áp dụng cho giả lập do lệnh mở, không thay thiết lập điện thoại thật. Nhật ký mở giả lập nằm trong `.cache/android-launch*.log`.
+
+Nếu Android chỉ hiện ở thanh tác vụ hoặc cửa sổ bị khuất, đóng giả lập rồi chạy `npm run android -- --reset-window`. Tùy chọn này đưa cửa sổ về vị trí nhỏ ở góc màn hình, có bản sao thiết lập cũ trong `.cache`, giữ nguyên ứng dụng và dữ liệu Android. Khi gặp hộp **Compatibility Warnings** về RAM, có thể chọn **Never show warnings for avd… again** rồi **OK** để cảnh báo không che cửa sổ ở lần mở sau.
+
+Máy ảo Pixel trên máy phát triển đã được giảm xuống 720 × 1600, 256 DPI để giảm tải đồ họa. Cách tự chỉnh, kiểm tra và khôi phục cấu hình gốc nằm trong [hướng dẫn Android 720p](docs/ANDROID_720P.md).
 
 Cần Node.js 20+, Flutter SDK và Python 3.10 64-bit. Chạy web cần trình duyệt hỗ trợ Flutter Web. Chạy Windows cần Visual Studio/Build Tools với workload Desktop development with C++, MSVC, CMake và Windows SDK.
 
@@ -61,7 +80,7 @@ flutter build apk --debug
 
 Trên máy này, launcher chuẩn bị junction trong thư mục build để nạp plugin Windows mà không đổi cài đặt hệ điều hành. Bản Windows cần giữ DLL và thư mục data bên cạnh file chạy; nhận diện tay vẫn cần Python/model trong cây dự án.
 
-Tài khoản, database và lịch sử lượt chơi chưa triển khai theo yêu cầu hiện tại. Cài đặt âm thanh/webcam được lưu trên thiết bị.
+Giao diện tài khoản đã có; dịch vụ đăng nhập và database chưa kết nối theo yêu cầu làm giao diện trước. Lịch sử trải nghiệm chỉ giữ trong phiên hiện tại. Cài đặt âm thanh/webcam, độ nhạy và độ khó được lưu trên thiết bị.
 
 ## Cấu trúc
 

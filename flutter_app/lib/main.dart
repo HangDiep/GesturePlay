@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'survival/app.dart';
+import 'account/app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const SurvivalApp());
+  runApp(const GesturePlayApp());
 }

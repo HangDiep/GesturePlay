@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import '../dead_signal/audio.dart';
+import '../account/result_journal.dart';
+import '../account/result_widgets.dart';
 import '../dead_signal/hand_preview.dart';
 import '../dead_signal/settings.dart';
 import '../exploration/model.dart';
@@ -16,6 +18,8 @@ import 'hand_input.dart';
 import 'hand_preview.dart';
 import 'painter.dart';
 import 'rules.dart';
+import 'practice.dart';
+import 'round_result.dart';
 
 const _ink = Color(0xff0b171d),
     _cream = Color(0xffeee7d6),
@@ -30,11 +34,33 @@ class SurvivalApp extends StatefulWidget {
     this.settings,
     this.art,
     this.audioEnabled = true,
+    this.playerName,
+    this.previewAccount = false,
+    this.onProfile,
+    this.onHistory,
+    this.onConnection,
+    this.onPractice,
+    this.onLogout,
+    this.onResult,
+    this.onResultDetails,
+    this.results,
+    this.practice = false,
+    this.stopBridgeOnDispose = true,
   });
   final HandBridge? bridge;
   final SignalSettings? settings;
   final TownArt? art;
   final bool audioEnabled;
+  final String? playerName;
+  final bool previewAccount, practice, stopBridgeOnDispose;
+  final Future<void> Function()? onProfile,
+      onHistory,
+      onConnection,
+      onPractice,
+      onLogout;
+  final ValueChanged<RoundResult>? onResult;
+  final Future<void> Function(RoundResult)? onResultDetails;
+  final ResultJournal? results;
   @override
   State<SurvivalApp> createState() => _SurvivalAppState();
 }
@@ -52,6 +78,14 @@ class _SurvivalAppState extends State<SurvivalApp>
   late final ExplorationModel _preview;
   TownArt? _art;
   ExplorationModel? _model;
+  PracticeCoach? _coach;
+  bool _reportedResult = false;
+  String? _roundId;
+  DateTime? _roundStarted;
+  RoundResult? _completedResult;
+  TownDifficulty get _difficulty => settings.townDifficulty == 'easy'
+      ? TownDifficulty.easy
+      : TownDifficulty.normal;
   Duration _last = Duration.zero;
   bool _handMode = false,
       _twoHandMode = false,
@@ -75,7 +109,18 @@ class _SurvivalAppState extends State<SurvivalApp>
     super.initState();
     hand = widget.bridge ?? HandBridge();
     settings = widget.settings ?? SignalSettings();
+    hand.cameraIndex = settings.cameraIndex;
+    hand.backend = settings.backend;
     audio = SignalAudio(settings, enabled: widget.audioEnabled);
+    _reducedEffects = settings.reducedEffects;
+    _handInput.swapHands = settings.swapHands;
+    if (widget.settings != null && settings.controlMode != 'keyboard') {
+      _handMode = true;
+      _twoHandMode = settings.controlMode == 'twoHands';
+      _handInput.twoHands = _twoHandMode;
+      unawaited(hand.start());
+      hand.setPreview(true);
+    }
     _preview = ExplorationModel(FieldMap.town, survival: true)
       ..player = const Offset(1100, 1260)
       ..aim = const Offset(1300, 1150)
@@ -120,6 +165,7 @@ class _SurvivalAppState extends State<SurvivalApp>
     hand.cameraIndex = settings.cameraIndex;
     hand.backend = settings.backend;
     _handInput.swapHands = settings.swapHands;
+    _reducedEffects = settings.reducedEffects;
     setState(() {});
   }
 
@@ -131,14 +177,57 @@ class _SurvivalAppState extends State<SurvivalApp>
     }
   }
 
+  Future<void> _openPortal(Future<void> Function() action) async {
+    _clearInput();
+    _handInput.reset();
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) setState(() => _hint = 'Chưa mở được mục này. Hãy thử lại.');
+    }
+    if (!mounted) return;
+    _reducedEffects = settings.reducedEffects;
+    final current = !_handMode
+        ? 'keyboard'
+        : _twoHandMode
+        ? 'twoHands'
+        : 'oneHand';
+    if (_model == null && current != settings.controlMode) {
+      _setHand(
+        settings.controlMode != 'keyboard',
+        twoHands: settings.controlMode == 'twoHands',
+      );
+    } else {
+      setState(() {});
+    }
+    _handInput.reset();
+    if (_twoHandMode) _handInput.blockHeldFist(hand);
+  }
+
+  Widget _portalButton(
+    String label,
+    IconData icon,
+    Future<void> Function()? action,
+    String key,
+  ) => OutlinedButton.icon(
+    key: ValueKey(key),
+    onPressed: action == null ? null : () => _openPortal(action),
+    icon: Icon(icon, size: 17),
+    label: Text(label),
+  );
+
   void _handChanged() {
     if (mounted && _handMode) setState(() {});
   }
 
   void _tick(Duration time) {
+    _handInput.swapHands = settings.swapHands;
+    _handInput.movementSensitivity = settings.movementSensitivity;
+    _handInput.pointerSensitivity = settings.sensitivity;
     final dt = ((time - _last).inMicroseconds / 1000000).clamp(0.0, .1);
     _last = time;
     _clock += dt;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
     var m = _model;
     if (_awaitingTwoHands && hand.twoHandsOpen) {
       _resume();
@@ -211,6 +300,42 @@ class _SurvivalAppState extends State<SurvivalApp>
         _updateMouseAim(m);
       }
       m.update(dt);
+      if (widget.practice && m.active && _coach != null) {
+        if (_coach!.update(m, dt)) {
+          _clearInput();
+          _handInput.reset();
+        }
+        m.message = _coach!.captionFor(singleHand: _handMode && !_twoHandMode);
+        m.messageFor = 1;
+      }
+      if (m.finished && !widget.practice && !_reportedResult) {
+        _reportedResult = true;
+        _completedResult = RoundResult(
+          id: _roundId!,
+          playedAt: _roundStarted!,
+          endedAt: DateTime.now(),
+          won: m.phase == FieldPhase.won,
+          seconds: m.elapsed,
+          score: m.score,
+          kills: m.kills,
+          cores: m.cores,
+          shots: m.shots,
+          hits: m.hits,
+          health: m.health,
+          weapon: m.gun.name,
+          ammo: m.ammo,
+          reserve: m.reserve,
+          medkits: m.medkits,
+          difficulty: m.difficulty.label,
+          controls: _twoHandMode
+              ? 'Hai tay'
+              : _handMode
+              ? 'Một tay'
+              : 'Bàn phím / cảm ứng',
+          reason: m.deathReason,
+        );
+        widget.onResult?.call(_completedResult!);
+      }
       if (wasActive && !m.active) {
         _clearInput();
         if (_twoHandMode &&
@@ -259,6 +384,7 @@ class _SurvivalAppState extends State<SurvivalApp>
   }
 
   bool _key(KeyEvent event) {
+    if (ModalRoute.of(context)?.isCurrent == false) return false;
     final key = event.logicalKey;
     if (event is KeyUpEvent) {
       _keys.remove(key);
@@ -365,9 +491,15 @@ class _SurvivalAppState extends State<SurvivalApp>
       _twoHandMode = value && twoHands;
       _handInput.twoHands = _twoHandMode;
       _handInput.swapHands = settings.swapHands;
+      settings.controlMode = !value
+          ? 'keyboard'
+          : twoHands
+          ? 'twoHands'
+          : 'oneHand';
       _awaitingTwoHands = _awaitingResume = false;
       _hint = '';
     });
+    unawaited(_saveSettings());
     if (value) {
       unawaited(hand.start());
       hand.setPreview(true);
@@ -393,8 +525,18 @@ class _SurvivalAppState extends State<SurvivalApp>
     _handInput.reset();
     hand.discardJumps();
     setState(() {
-      _model = ExplorationModel(FieldMap.town, seed: _seed, survival: true)
-        ..start();
+      _model = ExplorationModel(
+        FieldMap.town,
+        seed: _seed,
+        survival: true,
+        difficulty: _difficulty,
+        practice: widget.practice,
+      )..start();
+      _reportedResult = false;
+      _roundId = widget.practice ? null : RoundResult.newId();
+      _roundStarted = DateTime.now();
+      _completedResult = null;
+      _coach = widget.practice ? PracticeCoach(_model!) : null;
       _awaitingTwoHands = _twoHandMode && !hand.twoHandsOpen;
       _awaitingResume = false;
       if (_awaitingTwoHands) _model!.pause();
@@ -480,6 +622,11 @@ class _SurvivalAppState extends State<SurvivalApp>
   }
 
   Future<void> _home() async {
+    if (widget.practice && Navigator.of(context).canPop()) {
+      _model?.pause();
+      Navigator.of(context).pop();
+      return;
+    }
     if (_model?.phase == FieldPhase.paused) {
       final leave = await showDialog<bool>(
         context: _navigator.currentContext!,
@@ -527,7 +674,7 @@ class _SurvivalAppState extends State<SurvivalApp>
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_key);
     hand.removeListener(_handChanged);
-    hand.stop();
+    if (widget.stopBridgeOnDispose) hand.stop();
     if (widget.bridge == null) hand.dispose();
     if (widget.art == null) _art?.dispose();
     audio.dispose();
@@ -646,6 +793,12 @@ class _SurvivalAppState extends State<SurvivalApp>
                 children: [
                   Row(
                     children: [
+                      if (widget.practice)
+                        IconButton(
+                          tooltip: 'Về trang chính',
+                          onPressed: _home,
+                          icon: const Icon(Icons.arrow_back, color: _gold),
+                        ),
                       const Icon(Icons.radar, color: _gold, size: 20),
                       const SizedBox(width: 10),
                       const Text(
@@ -669,17 +822,79 @@ class _SurvivalAppState extends State<SurvivalApp>
                       ),
                     ],
                   ),
+                  if (widget.playerName != null) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Xin chào, ${widget.playerName}',
+                      style: const TextStyle(
+                        color: _cream,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (widget.previewAccount)
+                      const Text(
+                        'PHIÊN TRẢI NGHIỆM · Chưa đăng nhập tài khoản',
+                        style: TextStyle(color: _gold, fontSize: 11),
+                      ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _portalButton(
+                          'Hồ sơ',
+                          Icons.person_outline,
+                          widget.onProfile,
+                          'menu-profile',
+                        ),
+                        _portalButton(
+                          'Lịch sử',
+                          Icons.history,
+                          widget.onHistory,
+                          'menu-history',
+                        ),
+                        _portalButton(
+                          'Kết nối tay',
+                          Icons.videocam_outlined,
+                          widget.onConnection,
+                          'menu-connection',
+                        ),
+                        _portalButton(
+                          'Thực hành',
+                          Icons.sports_esports_outlined,
+                          widget.onPractice,
+                          'menu-practice',
+                        ),
+                        _portalButton(
+                          widget.previewAccount
+                              ? 'Thoát trải nghiệm'
+                              : 'Đăng xuất',
+                          Icons.logout,
+                          widget.onLogout,
+                          'menu-logout',
+                        ),
+                      ],
+                    ),
+                  ],
                   SizedBox(
-                    height: wide ? math.max(40, size.maxHeight * .13) : 36,
+                    height: widget.playerName != null
+                        ? 28
+                        : wide
+                        ? math.max(40, size.maxHeight * .13)
+                        : 36,
                   ),
                   _eyebrow('TÍN HIỆU CUỐI CÙNG'),
                   const SizedBox(height: 14),
                   Text(
-                    'DEAD\nSIGNAL',
+                    widget.practice ? 'LUYỆN\nCỬ CHỈ' : 'DEAD\nSIGNAL',
                     style: TextStyle(
                       color: _cream,
                       height: .94,
-                      fontSize: wide ? 88 : 60,
+                      fontSize: wide
+                          ? (widget.playerName != null ? 72 : 88)
+                          : 60,
                       fontWeight: FontWeight.w800,
                       letterSpacing: wide ? 9 : 5,
                       shadows: const [
@@ -688,11 +903,51 @@ class _SurvivalAppState extends State<SurvivalApp>
                     ),
                   ),
                   const SizedBox(height: 24),
-                  const Text(
-                    'Thị trấn đã im tiếng.\nĐừng để tín hiệu của bạn biến mất.',
-                    style: TextStyle(color: _muted, fontSize: 16, height: 1.65),
+                  Text(
+                    widget.practice
+                        ? '11 bài tập trong khu an toàn.\nKhông tính điểm, không ghi lịch sử lượt chơi.'
+                        : 'Thị trấn đã im tiếng.\nĐừng để tín hiệu của bạn biến mất.',
+                    style: const TextStyle(
+                      color: _muted,
+                      fontSize: 16,
+                      height: 1.65,
+                    ),
                   ),
                   const SizedBox(height: 26),
+                  if (!widget.practice) ...[
+                    _eyebrow('ĐỘ KHÓ'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        for (final difficulty in TownDifficulty.values)
+                          ChoiceChip(
+                            selectedColor: const Color(0xff35433c),
+                            backgroundColor: const Color(0xb3101d23),
+                            labelStyle: const TextStyle(color: _cream),
+                            checkmarkColor: _gold,
+                            key: ValueKey('difficulty-${difficulty.name}'),
+                            label: Text(difficulty.label),
+                            selected: _difficulty == difficulty,
+                            onSelected: (_) {
+                              setState(
+                                () => settings.townDifficulty = difficulty.name,
+                              );
+                              unawaited(_saveSettings());
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _difficulty == TownDifficulty.easy
+                          ? 'Dễ: quái chậm hơn 22%, sát thương thấp hơn 30%.'
+                          : 'Thường: tốc độ và sát thương tiêu chuẩn.',
+                      style: const TextStyle(color: _muted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                   Wrap(
                     spacing: 12,
                     runSpacing: 10,
@@ -716,18 +971,20 @@ class _SurvivalAppState extends State<SurvivalApp>
                   FilledButton(
                     key: const ValueKey('town-start'),
                     onPressed: _start,
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'BẮT ĐẦU SINH TỒN',
-                          style: TextStyle(
+                          widget.practice
+                              ? 'BẮT ĐẦU THỰC HÀNH'
+                              : 'BẮT ĐẦU SINH TỒN',
+                          style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             letterSpacing: 1.3,
                           ),
                         ),
-                        SizedBox(width: 24),
-                        Icon(Icons.arrow_forward, size: 20),
+                        const SizedBox(width: 24),
+                        const Icon(Icons.arrow_forward, size: 20),
                       ],
                     ),
                   ),
@@ -742,9 +999,18 @@ class _SurvivalAppState extends State<SurvivalApp>
                     spacing: 26,
                     runSpacing: 14,
                     children: [
-                      _menuFact('01', 'BẢN ĐỒ'),
-                      _menuFact('03:00', 'SINH TỒN'),
-                      _menuFact('05', 'ĐỢT TẤN CÔNG'),
+                      _menuFact(
+                        widget.practice ? '11' : '01',
+                        widget.practice ? 'BÀI THỰC HÀNH' : 'BẢN ĐỒ',
+                      ),
+                      _menuFact(
+                        widget.practice ? '∞' : '03:00',
+                        widget.practice ? 'THỜI GIAN' : 'SINH TỒN',
+                      ),
+                      _menuFact(
+                        widget.practice ? '00' : '05',
+                        widget.practice ? 'ĐIỂM TÍNH' : 'ĐỢT TẤN CÔNG',
+                      ),
                     ],
                   ),
                 ],
@@ -787,10 +1053,12 @@ class _SurvivalAppState extends State<SurvivalApp>
   );
 
   Widget _controlChoice(bool useHand, {bool twoHands = false}) => ChoiceChip(
+    labelStyle: const TextStyle(color: _cream),
     selected: _handMode == useHand && (!useHand || twoHands == _twoHandMode),
     avatar: Icon(
       useHand ? Icons.back_hand_outlined : Icons.keyboard_alt_outlined,
       size: 17,
+      color: _gold,
     ),
     label: Text(
       useHand
@@ -856,7 +1124,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                     m,
                     _art!,
                     reducedEffects: _reducedEffects,
-                    reticle: !_handMode && !compact,
+                    reticle: _handMode ? m.active : !compact,
                   ),
                 ),
               ),
@@ -926,10 +1194,18 @@ class _SurvivalAppState extends State<SurvivalApp>
               width: compact ? 106 : 220,
               child: Column(
                 children: [
-                  _eyebrow(compact ? 'SINH TỒN' : 'GIỮ TÍN HIỆU CỨU HỘ'),
+                  _eyebrow(
+                    widget.practice
+                        ? 'THỰC HÀNH'
+                        : compact
+                        ? 'SINH TỒN'
+                        : 'GIỮ TÍN HIỆU CỨU HỘ',
+                  ),
                   const SizedBox(height: 3),
                   Text(
-                    _time(m.rescueIn.ceil()),
+                    widget.practice
+                        ? '${(_coach?.index ?? 0) + 1}/11'
+                        : _time(m.rescueIn.ceil()),
                     style: TextStyle(
                       color: m.rescueIn <= 20 ? _gold : _cream,
                       fontSize: compact ? 28 : 34,
@@ -939,14 +1215,22 @@ class _SurvivalAppState extends State<SurvivalApp>
                     ),
                   ),
                   const SizedBox(height: 4),
-                  _bar(m.elapsed / TownRules.duration, _gold, 2),
+                  _bar(
+                    widget.practice
+                        ? (_coach?.index ?? 0) / 11
+                        : m.elapsed / TownRules.duration,
+                    _gold,
+                    2,
+                  ),
                   const SizedBox(height: 6),
                   Text(
-                    'ĐỢT ${m.wave}/5',
-                    style: const TextStyle(
+                    widget.practice
+                        ? 'KHÔNG TÍNH ĐIỂM'
+                        : '${m.difficulty.label.toUpperCase()} · ĐỢT ${m.wave}/5',
+                    style: TextStyle(
                       color: _muted,
                       fontSize: 9,
-                      letterSpacing: 2,
+                      letterSpacing: widget.practice ? .5 : 2,
                     ),
                   ),
                 ],
@@ -1030,7 +1314,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                 child: _handPreview(),
               ),
             ),
-          if (m.active && m.messageFor > 0 && !tiny)
+          if (m.active && m.messageFor > 0 && (!tiny || widget.practice))
             Positioned(
               top: compact ? 194 : 108,
               left: compact ? 14 : size.maxWidth / 2 - 190,
@@ -2115,7 +2399,9 @@ class _SurvivalAppState extends State<SurvivalApp>
                           : paused
                           ? 'TẠM DỪNG'
                           : won
-                          ? 'BẠN ĐÃ SỐNG SÓT'
+                          ? (widget.practice
+                                ? 'HOÀN THÀNH THỰC HÀNH'
+                                : 'BẠN ĐÃ SỐNG SÓT')
                           : 'TÍN HIỆU ĐÃ MẤT',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
@@ -2138,7 +2424,9 @@ class _SurvivalAppState extends State<SurvivalApp>
                                 ? hand.statusMessage
                                 : 'Thị trấn đang chờ bạn trở lại.')
                           : won
-                          ? 'Bạn đã giữ được tín hiệu trong 180 giây.'
+                          ? (widget.practice
+                                ? 'Bạn đã hoàn thành 11 bài điều khiển. Sẵn sàng vào thị trấn!'
+                                : 'Bạn đã giữ được tín hiệu trong 180 giây.')
                           : m.deathReason,
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: _muted, height: 1.6),
@@ -2238,6 +2526,45 @@ class _SurvivalAppState extends State<SurvivalApp>
                           'Lõi tín hiệu ${m.cores}/3  ·  Chính xác ${m.shots == 0 ? 0 : (m.hits / m.shots * 100).round()}%',
                           style: const TextStyle(color: _muted, fontSize: 12),
                         ),
+                        if (!widget.practice) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Độ khó: ${m.difficulty.label}',
+                            style: const TextStyle(color: _gold, fontSize: 13),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Máu ${m.health.ceil()}/100 · Túi máu ${m.medkits}/3\n${m.gun.name}: ${m.ammo} viên · Dự trữ ${m.reserve}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: _muted,
+                              fontSize: 12,
+                              height: 1.6,
+                            ),
+                          ),
+                          if (widget.results != null &&
+                              _completedResult != null) ...[
+                            const SizedBox(height: 16),
+                            ResultSaveNotice(
+                              journal: widget.results!,
+                              resultId: _completedResult!.id,
+                            ),
+                          ],
+                          if (widget.onResultDetails != null &&
+                              _completedResult != null)
+                            TextButton.icon(
+                              key: const ValueKey('last-result-detail'),
+                              onPressed: () => _openPortal(
+                                () =>
+                                    widget.onResultDetails!(_completedResult!),
+                              ),
+                              icon: const Icon(
+                                Icons.receipt_long_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('Xem chi tiết lượt chơi'),
+                            ),
+                        ],
                       ],
                       if (paused) ...[
                         const SizedBox(height: 14),
@@ -2270,6 +2597,8 @@ class _SurvivalAppState extends State<SurvivalApp>
                           child: Text(
                             paused
                                 ? 'TIẾP TỤC'
+                                : widget.practice
+                                ? 'LUYỆN LẠI'
                                 : won
                                 ? 'CHƠI LƯỢT MỚI'
                                 : 'CHƠI LẠI MAP',
@@ -2447,6 +2776,7 @@ class _SurvivalAppState extends State<SurvivalApp>
                     value: _reducedEffects,
                     onChanged: (v) {
                       update(() => _reducedEffects = v);
+                      settings.reducedEffects = v;
                       setState(() {});
                     },
                   ),
